@@ -1,0 +1,26 @@
+# Dependencies
+backend/venv/
+frontend/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Environment & secrets
+backend/.env
+.env
+.env.*
+
+# Build / IDE
+frontend/dist/
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Optional: jangan push foto wajah mentah ke publik
+ml_model/dataset/

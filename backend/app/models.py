@@ -1,0 +1,78 @@
+from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Time
+from sqlalchemy.orm import relationship
+from .database import Base
+import datetime
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255))
+    email = Column(String(255), unique=True)
+    password = Column(String(255))
+    role = Column(Enum('admin', 'dosen', 'mahasiswa'), default='mahasiswa')
+
+class Student(Base):
+    __tablename__ = "students"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    nim = Column(String(20), unique=True)
+    name = Column(String(255))
+    photo_path = Column(String(255), nullable=True)
+    face_embedding = Column(String(5000), nullable=True)
+    user = relationship("User")
+    attendances = relationship("Attendance", back_populates="student")
+
+class Lecturer(Base):
+    __tablename__ = "lecturers"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    nip = Column(String(20), unique=True)
+    name = Column(String(255))
+    user = relationship("User")
+    courses = relationship("Course", back_populates="lecturer")
+
+class Course(Base):
+    __tablename__ = "courses"
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(20), unique=True)
+    name = Column(String(255))
+    lecturer_id = Column(Integer, ForeignKey("lecturers.id"))
+    credits = Column(Integer)
+    lecturer = relationship("Lecturer", back_populates="courses")
+    schedules = relationship("Schedule", back_populates="course")
+
+class Schedule(Base):
+    __tablename__ = "schedules"
+    id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(Integer, ForeignKey("courses.id"))
+    day = Column(Enum('Senin','Selasa','Rabu','Kamis','Jumat'))
+    start_time = Column(Time)
+    end_time = Column(Time)
+    room = Column(String(50))
+    course = relationship("Course", back_populates="schedules")
+    attendances = relationship("Attendance", back_populates="schedule")
+    sessions = relationship("AttendanceSession", back_populates="schedule")
+
+class AttendanceSession(Base):
+    __tablename__ = "attendance_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    schedule_id = Column(Integer, ForeignKey("schedules.id"))
+    opened_by_user_id = Column(Integer, ForeignKey("users.id"))
+    started_at = Column(DateTime, default=datetime.datetime.now)
+    ended_at = Column(DateTime, nullable=True)
+    status = Column(Enum('open', 'closed', 'cancelled'), default='open')
+    schedule = relationship("Schedule", back_populates="sessions")
+    opened_by = relationship("User")
+    attendances = relationship("Attendance", back_populates="session")
+
+class Attendance(Base):
+    __tablename__ = "attendances"
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"))
+    schedule_id = Column(Integer, ForeignKey("schedules.id"), nullable=True)
+    session_id = Column(Integer, ForeignKey("attendance_sessions.id"), nullable=True)
+    check_in_time = Column(DateTime, default=datetime.datetime.now)
+    status = Column(Enum('hadir', 'terlambat'), default='hadir')
+    student = relationship("Student", back_populates="attendances")
+    schedule = relationship("Schedule", back_populates="attendances")
+    session = relationship("AttendanceSession", back_populates="attendances")
