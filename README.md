@@ -1,6 +1,6 @@
 # FaceAttend
 
-Sistem absensi kelas berbasis **pengenalan wajah**. Admin mengelola data master; dosen (atau admin) membuka **sesi absensi** per jadwal; mahasiswa cukup menghadapkan wajah ke kamera—tanpa login per orang.
+Sistem absensi kelas berbasis **pengenalan wajah**. Admin mengelola data master; dosen (atau admin) membuka **sesi absensi** per jadwal; mahasiswa cukup menghadapkan wajah ke kamera tanpa login per orang.
 
 ---
 
