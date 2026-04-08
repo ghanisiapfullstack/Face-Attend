@@ -11,4 +11,4 @@ passlib
 bcrypt
 python-multipart
 sqlalchemy
-python-dotenvcd C:\Users\USER\face-attend\backend
+python-dotenv
