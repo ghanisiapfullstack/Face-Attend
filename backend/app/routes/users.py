@@ -11,7 +11,13 @@ router = APIRouter()
 @router.get("/students")
 def get_students(db: Session = Depends(get_db), current_user=Depends(require_admin)):
     students = db.query(Student).all()
-    return [{"id": s.id, "nim": s.nim, "name": s.name, "photo_path": s.photo_path} for s in students]
+    return [{
+        "id": s.id,
+        "nim": s.nim,
+        "name": s.name,
+        "email": s.user.email if s.user else None,
+        "photo_path": s.photo_path,
+    } for s in students]
 
 @router.post("/students")
 def create_student(data: dict, db: Session = Depends(get_db), current_user=Depends(require_admin)):

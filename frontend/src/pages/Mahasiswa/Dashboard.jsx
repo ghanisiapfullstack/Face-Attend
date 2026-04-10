@@ -6,15 +6,22 @@ import { useAuth } from '../../context/AuthContext';
 export default function MahasiswaDashboard() {
   const { user } = useAuth();
   const [attendances, setAttendances] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/attendance/my').then(r => setAttendances(r.data)).catch(console.error).finally(() => setLoading(false));
+    Promise.all([api.get('/api/attendance/my'), api.get('/api/schedules/student/my')])
+      .then(([attendanceRes, scheduleRes]) => {
+        setAttendances(attendanceRes.data || []);
+        setSchedules(scheduleRes.data || []);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   const totalHadir = attendances.filter(a => a.status === 'hadir').length;
   const totalTerlambat = attendances.filter(a => a.status === 'terlambat').length;
-  const courses = [...new Set(attendances.map(a => a.course_name).filter(Boolean))];
+  const courses = [...new Set(schedules.map(s => s.course_name).filter(Boolean))];
 
   const courseStats = courses.map(course => {
     const ca = attendances.filter(a => a.course_name === course);
@@ -98,6 +105,29 @@ export default function MahasiswaDashboard() {
                       <td style={{ fontSize: 12 }}>{a.schedule || '—'}</td>
                       <td style={{ fontSize: 12 }}>{new Date(a.check_in_time).toLocaleString('id-ID')}</td>
                       <td><span className={`badge ${a.status === 'hadir' ? 'badge-green' : 'badge-amber'}`}>{a.status === 'hadir' ? 'Hadir' : 'Terlambat'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ marginTop: 20 }}>
+          <div className="card-header"><span className="card-title">Jadwal Kelas yang Akan Datang</span></div>
+          {loading ? <div className="empty-state">Memuat data...</div>
+          : schedules.length === 0 ? <div className="empty-state">Belum ada jadwal yang diassign</div>
+          : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Mata Kuliah</th><th>Jadwal Reguler</th><th>Tanggal Terdekat</th><th>Kelas Pengganti</th></tr></thead>
+                <tbody>
+                  {schedules.slice(0, 6).map(s => (
+                    <tr key={s.id}>
+                      <td style={{ fontWeight: 500, color: 'var(--text-1)' }}>{s.course_name || '—'}</td>
+                      <td style={{ fontSize: 12 }}>{s.day} {s.start_time.slice(0, 5)} - {s.end_time.slice(0, 5)} • {s.room}</td>
+                      <td style={{ fontSize: 12 }}>{new Date(s.upcoming_regular_date).toLocaleDateString('id-ID')}</td>
+                      <td style={{ fontSize: 12 }}>{s.overrides?.length ? `${s.overrides.length} perubahan` : 'Tidak ada'}</td>
                     </tr>
                   ))}
                 </tbody>

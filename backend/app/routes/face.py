@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Student, Attendance, AttendanceSession, User
 from ..face_recognition import recognize_face
+from fastapi.concurrency import run_in_threadpool
 from jose import jwt, JWTError
 from ..auth import SECRET_KEY, ALGORITHM
 import base64
@@ -85,8 +86,8 @@ async def websocket_face(websocket: WebSocket):
             np_arr = np.frombuffer(image_bytes, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-            # Recognize face
-            person_name, score = recognize_face(frame)
+            # Recognize face (run in threadpool to avoid blocking async loop)
+            person_name, score = await run_in_threadpool(recognize_face, frame)
 
             if person_name:
                 # Cari student berdasarkan nama folder (nama di embeddings)

@@ -17,6 +17,7 @@ const dosenMenus = [
 ];
 const mahasiswaMenus = [
   { label: 'Dashboard',      path: '/mahasiswa/dashboard', icon: '▦' },
+  { label: 'Jadwal Saya',    path: '/mahasiswa/schedule',  icon: '◷' },
   { label: 'Riwayat Absensi',path: '/mahasiswa/attendance',icon: '◈' },
 ];
 

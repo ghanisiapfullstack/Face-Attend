@@ -17,6 +17,17 @@ export default function DosenAttendance() {
   const [log, setLog] = useState([]);
   const [liveStatus, setLiveStatus] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [editingOverrideId, setEditingOverrideId] = useState(null);
+  const [overrideForm, setOverrideForm] = useState({
+    original_date: '',
+    replacement_date: '',
+    new_start_time: '',
+    new_end_time: '',
+    new_room: '',
+    reason: '',
+  });
 
   const refreshData = useCallback(async () => {
     try {
@@ -137,6 +148,50 @@ export default function DosenAttendance() {
     }
   };
 
+  const openOverrideModal = (schedule, override = null) => {
+    setEditingSchedule(schedule);
+    setEditingOverrideId(override?.id || null);
+    setOverrideForm({
+      original_date: override?.original_date || schedule.upcoming_regular_date || '',
+      replacement_date: override?.replacement_date || '',
+      new_start_time: override?.new_start_time || schedule.start_time,
+      new_end_time: override?.new_end_time || schedule.end_time,
+      new_room: override?.new_room || schedule.room,
+      reason: override?.reason || '',
+    });
+    setShowOverrideModal(true);
+  };
+
+  const handleSaveOverride = async (e) => {
+    e.preventDefault();
+    if (!editingSchedule) return;
+    try {
+      if (editingOverrideId) {
+        await api.put(`/api/schedules/overrides/${editingOverrideId}`, overrideForm);
+      } else {
+        await api.post(`/api/schedules/${editingSchedule.id}/overrides`, overrideForm);
+      }
+      setShowOverrideModal(false);
+      setEditingSchedule(null);
+      setEditingOverrideId(null);
+      await refreshData();
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.detail || 'Gagal menyimpan kelas pengganti');
+    }
+  };
+
+  const handleDeleteOverride = async (overrideId) => {
+    if (!confirm('Hapus kelas pengganti ini?')) return;
+    try {
+      await api.delete(`/api/schedules/overrides/${overrideId}`);
+      await refreshData();
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.detail || 'Gagal menghapus kelas pengganti');
+    }
+  };
+
   const statusColor = liveStatus.startsWith('✓')
     ? 'rgba(34,197,94,0.88)'
     : liveStatus.startsWith('⚠')
@@ -176,6 +231,58 @@ export default function DosenAttendance() {
               </>
             )}
           </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header">
+            <span className="card-title">Jadwal Mengajar & Kelas Pengganti</span>
+          </div>
+          {loading ? (
+            <div className="empty-state">Memuat jadwal...</div>
+          ) : schedules.length === 0 ? (
+            <div className="empty-state">Belum ada jadwal mengajar</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead><tr><th>Mata Kuliah</th><th>Jadwal</th><th>Kelas Pengganti</th><th></th></tr></thead>
+                <tbody>
+                  {schedules.map((schedule) => (
+                    <tr key={schedule.id}>
+                      <td style={{ fontWeight: 500, color: 'var(--text-1)' }}>{schedule.course_name}</td>
+                      <td style={{ fontSize: 12 }}>
+                        {schedule.day} {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}<br />
+                        {schedule.room}
+                      </td>
+                      <td style={{ fontSize: 12 }}>
+                        {!schedule.overrides?.length ? (
+                          <span style={{ color: 'var(--text-3)' }}>Belum ada</span>
+                        ) : (
+                          schedule.overrides.map((override) => (
+                            <div key={override.id} style={{ marginBottom: 10 }}>
+                              <span className="badge badge-amber">Diubah {new Date(override.updated_at || override.created_at).toLocaleDateString('id-ID')}</span>
+                              <div style={{ marginTop: 4 }}>
+                                {new Date(override.replacement_date).toLocaleDateString('id-ID')} • {override.new_start_time.slice(0, 5)} - {override.new_end_time.slice(0, 5)} • {override.new_room || schedule.room}
+                              </div>
+                              {override.reason && <div style={{ color: 'var(--text-3)' }}>{override.reason}</div>}
+                              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                                <button className="btn btn-ghost btn-sm" onClick={() => openOverrideModal(schedule, override)}>Edit</button>
+                                <button className="btn btn-danger-soft btn-sm" onClick={() => handleDeleteOverride(override.id)}>Hapus</button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </td>
+                      <td>
+                        <button className="btn btn-primary btn-sm" onClick={() => openOverrideModal(schedule)}>
+                          Kelas Pengganti
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
@@ -274,6 +381,50 @@ export default function DosenAttendance() {
             </div>
           )}
         </div>
+
+        {showOverrideModal && editingSchedule && (
+          <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowOverrideModal(false)}>
+            <div className="modal">
+              <h2 className="modal-title">{editingOverrideId ? 'Edit Kelas Pengganti' : 'Tambah Kelas Pengganti'}</h2>
+              <form onSubmit={handleSaveOverride}>
+                <div style={{ marginBottom: 14 }}>
+                  <label className="input-label">Tanggal Pertemuan Asal</label>
+                  <input type="date" className="input" value={overrideForm.original_date} onChange={(e) => setOverrideForm({ ...overrideForm, original_date: e.target.value })} required />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label className="input-label">Tanggal Pengganti</label>
+                  <input type="date" className="input" value={overrideForm.replacement_date} onChange={(e) => setOverrideForm({ ...overrideForm, replacement_date: e.target.value })} required />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div>
+                    <label className="input-label">Jam Mulai Baru</label>
+                    <input type="time" className="input" value={overrideForm.new_start_time} onChange={(e) => setOverrideForm({ ...overrideForm, new_start_time: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="input-label">Jam Selesai Baru</label>
+                    <input type="time" className="input" value={overrideForm.new_end_time} onChange={(e) => setOverrideForm({ ...overrideForm, new_end_time: e.target.value })} required />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label className="input-label">Ruangan Baru</label>
+                  <input type="text" className="input" value={overrideForm.new_room} onChange={(e) => setOverrideForm({ ...overrideForm, new_room: e.target.value })} required />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label className="input-label">Alasan</label>
+                  <textarea className="input" value={overrideForm.reason} onChange={(e) => setOverrideForm({ ...overrideForm, reason: e.target.value })} rows={3} />
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                    {editingOverrideId ? 'Simpan Perubahan' : 'Buat Kelas Pengganti'}
+                  </button>
+                  <button type="button" className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setShowOverrideModal(false)}>
+                    Batal
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

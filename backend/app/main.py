@@ -8,7 +8,7 @@ from . import models
 Base.metadata.create_all(bind=engine)
 
 def run_light_migration():
-    # Lightweight migration so existing databases get `session_id` without manual ALTER.
+    # Lightweight migration so existing databases get newer columns/tables without manual ALTER.
     with engine.begin() as conn:
         column_exists = conn.execute(text("""
             SELECT COUNT(*) AS cnt
@@ -19,6 +19,49 @@ def run_light_migration():
         """)).scalar()
         if not column_exists:
             conn.execute(text("ALTER TABLE attendances ADD COLUMN session_id INT NULL"))
+
+        enrollments_table = conn.execute(text("""
+            SELECT COUNT(*) AS cnt
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = 'enrollments'
+        """)).scalar()
+        if not enrollments_table:
+            conn.execute(text("""
+                CREATE TABLE enrollments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    student_id INT NOT NULL,
+                    course_id INT NOT NULL,
+                    enrolled_at DATETIME NULL,
+                    CONSTRAINT fk_enrollments_student FOREIGN KEY (student_id) REFERENCES students(id),
+                    CONSTRAINT fk_enrollments_course FOREIGN KEY (course_id) REFERENCES courses(id)
+                )
+            """))
+
+        overrides_table = conn.execute(text("""
+            SELECT COUNT(*) AS cnt
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = 'schedule_overrides'
+        """)).scalar()
+        if not overrides_table:
+            conn.execute(text("""
+                CREATE TABLE schedule_overrides (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    schedule_id INT NOT NULL,
+                    original_date DATE NOT NULL,
+                    replacement_date DATE NOT NULL,
+                    new_start_time TIME NOT NULL,
+                    new_end_time TIME NOT NULL,
+                    new_room VARCHAR(50) NULL,
+                    reason VARCHAR(255) NULL,
+                    created_by_user_id INT NOT NULL,
+                    created_at DATETIME NULL,
+                    updated_at DATETIME NULL,
+                    CONSTRAINT fk_overrides_schedule FOREIGN KEY (schedule_id) REFERENCES schedules(id),
+                    CONSTRAINT fk_overrides_user FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+                )
+            """))
 
 run_light_migration()
 

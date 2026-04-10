@@ -12,6 +12,7 @@ import AdminUsers from './pages/Admin/Users';
 import DosenDashboard from './pages/Dosen/Dashboard';
 import DosenAttendance from './pages/Dosen/Attendance';
 import MahasiswaDashboard from './pages/Mahasiswa/Dashboard';
+import MahasiswaSchedule from './pages/Mahasiswa/Schedule';
 import MahasiswaAttendance from './pages/Mahasiswa/Attendance';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
 
           {/* Mahasiswa */}
           <Route path="/mahasiswa/dashboard" element={<PrivateRoute roles={['mahasiswa']}><MahasiswaDashboard /></PrivateRoute>} />
+          <Route path="/mahasiswa/schedule" element={<PrivateRoute roles={['mahasiswa']}><MahasiswaSchedule /></PrivateRoute>} />
           <Route path="/mahasiswa/attendance" element={<PrivateRoute roles={['mahasiswa']}><MahasiswaAttendance /></PrivateRoute>} />
 
           <Route path="/unauthorized" element={

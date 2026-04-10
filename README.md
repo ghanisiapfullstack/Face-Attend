@@ -35,9 +35,17 @@ Sistem absensi kelas berbasis **pengenalan wajah**. Admin mengelola data master;
 Embeddings wajah: file JSON (DeepFace Facenet) ──► dibaca saat inferensi
 ```
 
-- **Frontend**: React 19, Vite, React Router, Axios, `react-webcam`.
+- **Frontend**: React 19, Vite, React Router, Axios, `react-webcam`, `framer-motion`, `date-fns`, `lucide-react`.
 - **Backend**: FastAPI, SQLAlchemy, MySQL, JWT (`python-jose` + bcrypt).
-- **Face recognition**: DeepFace (Facenet), OpenCV, NumPy; embedding referensi di `ml_model/embeddings.json`.
+- **Face recognition**: DeepFace (Facenet), OpenCV, NumPy. Embedding referensi disimpan di `ml_model/embeddings.json` dan otomatis di-*cache* (in-memory) saat server berjalan.
+
+---
+
+## Pembaruan Terkini (Performa & UI)
+
+1. **Async Backend Optimization**: Proses deteksi DeepFace sekarang berjalan di dalam **threadpool** (`run_in_threadpool`) agar WebSocket tidak memblokir (*freeze*) antrean *event loop* ketika banyak mahasiswa absen bersamaan.
+2. **In-Memory Cache**: `embeddings.json` tidak lagi dibaca secara berulang dari disk per-frame, melainkan disimpan pada Memory/RAM.
+3. **UI Mahasiswa**: Fitur kalender interaktif untuk halaman Jadwal menggunakan *CSS Grid* dan pustaka `date-fns`. Halaman riwayat absensi dirombak menjadi tampilan jejak waktu (*Timeline*), dilengkapi animasi UX menggunakan `framer-motion`.
 
 ---
 

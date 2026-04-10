@@ -1,14 +1,21 @@
 import numpy as np
 import json
 import os
+from deepface import DeepFace
 
 EMBEDDINGS_FILE = r"C:\Users\USER\face-attend\ml_model\embeddings.json"
 THRESHOLD = 0.6
 
+_embeddings_cache = None
+
 def load_embeddings():
+    global _embeddings_cache
+    if _embeddings_cache is not None:
+        return _embeddings_cache
     try:
         with open(EMBEDDINGS_FILE, 'r') as f:
-            return json.load(f)
+            _embeddings_cache = json.load(f)
+            return _embeddings_cache
     except:
         return {}
 
@@ -18,7 +25,6 @@ def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 def recognize_face(image):
-    from deepface import DeepFace
     embeddings = load_embeddings()
     if not embeddings:
         return None, 0
