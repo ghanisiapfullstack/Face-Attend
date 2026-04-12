@@ -10,6 +10,7 @@ class User(Base):
     email = Column(String(255), unique=True)
     password = Column(String(255))
     role = Column(Enum('admin', 'dosen', 'mahasiswa'), default='mahasiswa')
+    avatar_path = Column(String(512), nullable=True)
 
 class Student(Base):
     __tablename__ = "students"

@@ -1,4 +1,7 @@
+import os
 from datetime import datetime, timedelta
+
+from dotenv import load_dotenv
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -7,7 +10,9 @@ from sqlalchemy.orm import Session
 from . import models
 from .database import get_db
 
-SECRET_KEY = "faceattend-secret-key-binus-2026"
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-set-SECRET_KEY-in-env")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 hari
 

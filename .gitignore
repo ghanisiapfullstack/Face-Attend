@@ -12,6 +12,8 @@ __pycache__/
 backend/.env
 .env
 .env.*
+!.env.example
+!**/.env.example
 
 # Build / IDE
 frontend/dist/
@@ -24,3 +26,7 @@ Thumbs.db
 
 # Optional: jangan push foto wajah mentah ke publik
 ml_model/dataset/
+
+# Foto profil pengguna (unggahan runtime)
+backend/static/avatars/*
+!backend/static/avatars/.gitkeep

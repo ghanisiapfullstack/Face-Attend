@@ -1,18 +1,25 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
-from ..database import get_db
-from ..models import Student, Attendance, AttendanceSession, User
-from ..face_recognition import recognize_face
-from fastapi.concurrency import run_in_threadpool
-from jose import jwt, JWTError
-from ..auth import SECRET_KEY, ALGORITHM
 import base64
-import numpy as np
-import cv2
 import datetime
 import json
 
+import cv2
+import numpy as np
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
+from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+
+from ..auth import ALGORITHM, SECRET_KEY
+from ..database import get_db
+from ..face_recognition import (
+    build_embedding_candidates,
+    load_embeddings,
+    recognize_face_against_candidates,
+)
+from ..models import Attendance, AttendanceSession, Enrollment, Student, User
+
 router = APIRouter()
+
 
 def get_user_from_token(db: Session, token: str):
     try:
@@ -24,7 +31,8 @@ def get_user_from_token(db: Session, token: str):
     except JWTError:
         return None
 
-def is_already_absent(db: Session, student_id: int, schedule_id, session_id):
+
+def is_already_recorded(db: Session, student_id: int, schedule_id, session_id):
     session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id).first()
     if not session:
         return False
@@ -32,9 +40,10 @@ def is_already_absent(db: Session, student_id: int, schedule_id, session_id):
     existing = db.query(Attendance).filter(
         Attendance.student_id == student_id,
         Attendance.schedule_id == schedule_id,
-        Attendance.session_id == session_id
+        Attendance.session_id == session_id,
     ).first()
     return existing is not None
+
 
 @router.websocket("/ws")
 async def websocket_face(websocket: WebSocket):
@@ -73,6 +82,20 @@ async def websocket_face(websocket: WebSocket):
             await websocket.close()
             return
 
+        schedule = session.schedule
+        course_id = schedule.course_id if schedule and schedule.course else None
+        enrolled_students = (
+            db.query(Student)
+            .join(Enrollment, Enrollment.student_id == Student.id)
+            .filter(Enrollment.course_id == course_id)
+            .distinct()
+            .all()
+            if course_id
+            else []
+        )
+        emb = load_embeddings()
+        candidates = build_embedding_candidates(enrolled_students, emb)
+
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
@@ -81,76 +104,134 @@ async def websocket_face(websocket: WebSocket):
             if not image_data:
                 continue
 
-            # Decode base64 image
             image_bytes = base64.b64decode(image_data.split(",")[1])
             np_arr = np.frombuffer(image_bytes, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-            # Recognize face (run in threadpool to avoid blocking async loop)
-            person_name, score = await run_in_threadpool(recognize_face, frame)
+            if not course_id:
+                await websocket.send_text(
+                    json.dumps({"recognized": False, "error": "Jadwal tidak memiliki mata kuliah"})
+                )
+                continue
 
-            if person_name:
-                # Cari student berdasarkan nama folder (nama di embeddings)
-                student = db.query(Student).filter(
-                    Student.name.ilike(f"%{person_name}%")
-                ).first()
+            if not enrolled_students:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "recognized": False,
+                            "reason": "no_enrollment",
+                            "message": "Tidak ada mahasiswa terdaftar di mata kuliah ini",
+                        }
+                    )
+                )
+                continue
 
-                if student:
-                    session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id_int).first()
-                    if not session or session.status != "open":
-                        await websocket.send_text(json.dumps({"error": "Sesi sudah ditutup"}))
-                        await websocket.close()
-                        return
+            if not candidates:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "recognized": False,
+                            "reason": "no_face_model",
+                            "message": "Belum ada embedding wajah untuk mahasiswa terdaftar (cek train & nama vs dataset)",
+                        }
+                    )
+                )
+                continue
 
-                    schedule = session.schedule
-                    schedule_id = schedule.id if schedule else None
-                    already = is_already_absent(db, student.id, schedule_id, session_id_int)
+            student_id, score = await run_in_threadpool(
+                recognize_face_against_candidates, frame, candidates
+            )
 
-                    if not already:
-                        now = datetime.datetime.now()
-                        status = "hadir"
-                        if schedule:
-                            late_threshold = datetime.datetime.combine(
-                                datetime.date.today(), schedule.start_time
-                            ) + datetime.timedelta(minutes=15)
-                            if now > late_threshold:
-                                status = "terlambat"
+            if not student_id:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "recognized": False,
+                            "name": None,
+                            "nim": None,
+                            "score": score,
+                            "message": "Wajah tidak dikenali atau ambigu (sesuaikan threshold / dataset)",
+                        }
+                    )
+                )
+                continue
 
-                        attendance = Attendance(
-                            student_id=student.id,
-                            schedule_id=schedule_id,
-                            session_id=session_id_int,
-                            check_in_time=now,
-                            status=status
-                        )
-                        db.add(attendance)
-                        db.commit()
+            student = db.query(Student).filter(Student.id == student_id).first()
+            if not student:
+                await websocket.send_text(json.dumps({"recognized": False, "name": None, "nim": None}))
+                continue
 
-                    await websocket.send_text(json.dumps({
+            enrolled_ok = (
+                db.query(Enrollment)
+                .filter(Enrollment.student_id == student.id, Enrollment.course_id == course_id)
+                .first()
+            )
+            if not enrolled_ok:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "recognized": True,
+                            "rejected": True,
+                            "reason": "not_enrolled",
+                            "name": student.name,
+                            "nim": student.nim,
+                            "message": "Mahasiswa tidak terdaftar di mata kuliah ini",
+                        }
+                    )
+                )
+                continue
+
+            session = db.query(AttendanceSession).filter(AttendanceSession.id == session_id_int).first()
+            if not session or session.status != "open":
+                await websocket.send_text(json.dumps({"error": "Sesi sudah ditutup"}))
+                await websocket.close()
+                return
+
+            schedule = session.schedule
+            schedule_id = schedule.id if schedule else None
+            already = is_already_recorded(db, student.id, schedule_id, session_id_int)
+
+            status = "hadir"
+            if not already:
+                now = datetime.datetime.now()
+                status = "hadir"
+                if schedule:
+                    late_threshold = datetime.datetime.combine(
+                        datetime.date.today(), schedule.start_time
+                    ) + datetime.timedelta(minutes=15)
+                    if now > late_threshold:
+                        status = "terlambat"
+
+                attendance = Attendance(
+                    student_id=student.id,
+                    schedule_id=schedule_id,
+                    session_id=session_id_int,
+                    check_in_time=now,
+                    status=status,
+                )
+                db.add(attendance)
+                db.commit()
+
+            await websocket.send_text(
+                json.dumps(
+                    {
                         "recognized": True,
                         "name": student.name,
                         "nim": student.nim,
                         "status": status if not already else "sudah_absen",
                         "already_absent": already,
-                        "score": score
-                    }))
-                else:
-                    await websocket.send_text(json.dumps({
-                        "recognized": False,
-                        "name": None,
-                        "nim": None,
-                    }))
-            else:
-                await websocket.send_text(json.dumps({
-                    "recognized": False,
-                    "name": None,
-                    "nim": None,
-                }))
+                        "score": score,
+                    }
+                )
+            )
 
     except WebSocketDisconnect:
         print("WebSocket disconnected")
     except Exception as e:
         print(f"Error: {e}")
-        await websocket.send_text(json.dumps({"error": str(e)}))
+        try:
+            await websocket.send_text(json.dumps({"error": "Terjadi kesalahan pada server"}))
+        except Exception:
+            pass
     finally:
         db.close()

@@ -14,6 +14,7 @@ import DosenAttendance from './pages/Dosen/Attendance';
 import MahasiswaDashboard from './pages/Mahasiswa/Dashboard';
 import MahasiswaSchedule from './pages/Mahasiswa/Schedule';
 import MahasiswaAttendance from './pages/Mahasiswa/Attendance';
+import Profile from './pages/Profile';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<Navigate to="/login" />} />
+          <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
 
           {/* Admin */}
           <Route path="/admin/dashboard" element={<PrivateRoute roles={['admin']}><AdminDashboard /></PrivateRoute>} />
