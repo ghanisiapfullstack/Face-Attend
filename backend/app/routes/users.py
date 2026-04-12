@@ -1,10 +1,109 @@
-from fastapi import APIRouter, Depends, HTTPException
+import shutil
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+
+from ..auth import get_current_user, hash_password, require_admin, verify_password
 from ..database import get_db
-from ..models import User, Student, Lecturer
-from ..auth import require_admin, get_current_user, hash_password
+from ..models import Lecturer, Student, User
 
 router = APIRouter()
+
+_AVATAR_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "avatars"
+_AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+_ALLOWED_IMG = {"image/jpeg", "image/png", "image/webp"}
+_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+
+
+# ── PROFIL (semua role) ───────────────────────────────────
+
+@router.get("/me")
+def get_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    avatar_url = None
+    if current_user.avatar_path:
+        avatar_url = f"/static/avatars/{current_user.avatar_path}"
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "role": current_user.role,
+        "avatar_url": avatar_url,
+        "student": (
+            {"id": student.id, "nim": student.nim, "name": student.name} if student else None
+        ),
+    }
+
+
+@router.put("/me")
+def update_me(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if "name" in data and data["name"]:
+        current_user.name = str(data["name"]).strip()
+
+    new_pw = data.get("new_password")
+    if new_pw:
+        current = data.get("current_password") or ""
+        if not verify_password(current, current_user.password):
+            raise HTTPException(status_code=400, detail="Kata sandi saat ini salah")
+        if len(str(new_pw)) < 6:
+            raise HTTPException(status_code=400, detail="Kata sandi baru minimal 6 karakter")
+        current_user.password = hash_password(new_pw)
+
+    db.commit()
+    return {"message": "Profil diperbarui", "name": current_user.name}
+
+
+@router.post("/me/avatar")
+def upload_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if file.content_type not in _ALLOWED_IMG:
+        raise HTTPException(status_code=400, detail="Gunakan JPG, PNG, atau WebP")
+
+    ext = _EXT.get(file.content_type, ".jpg")
+    fname = f"{current_user.id}_{uuid.uuid4().hex}{ext}"
+    dest = _AVATAR_DIR / fname
+
+    if current_user.avatar_path:
+        old = _AVATAR_DIR / current_user.avatar_path
+        if old.is_file():
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+    with dest.open("wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    current_user.avatar_path = fname
+    db.commit()
+    return {"message": "Foto profil diperbarui", "avatar_url": f"/static/avatars/{fname}"}
+
+
+@router.put("/{user_id}/password")
+def admin_reset_password(
+    user_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    new_pw = data.get("new_password")
+    if not new_pw or len(str(new_pw)) < 6:
+        raise HTTPException(status_code=400, detail="new_password wajib, minimal 6 karakter")
+    user.password = hash_password(new_pw)
+    db.commit()
+    return {"message": "Kata sandi user telah diatur ulang"}
 
 # ── STUDENTS ──────────────────────────────────────────────
 

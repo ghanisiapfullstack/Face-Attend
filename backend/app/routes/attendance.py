@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Attendance, Student, Schedule, AttendanceSession, Lecturer, Course
+from ..models import Attendance, Student, Schedule, AttendanceSession, Lecturer, Course, Enrollment
 from ..auth import get_current_user, require_admin, require_dosen
 import datetime
 
@@ -23,6 +23,54 @@ def get_all_attendance(db: Session = Depends(get_db), current_user=Depends(requi
         }
         for a in attendances
     ]
+
+@router.get("/live/open-for-me")
+def get_open_sessions_for_student(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Notifikasi mahasiswa: sesi absensi yang sedang terbuka untuk MK yang diikuti."""
+    if current_user.role != "mahasiswa":
+        raise HTTPException(status_code=403, detail="Hanya untuk mahasiswa")
+
+    student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Data mahasiswa tidak ditemukan")
+
+    course_ids = [e.course_id for e in db.query(Enrollment).filter(Enrollment.student_id == student.id).all()]
+    if not course_ids:
+        return []
+
+    schedule_ids = [
+        s.id for s in db.query(Schedule).filter(Schedule.course_id.in_(course_ids)).all()
+    ]
+    if not schedule_ids:
+        return []
+
+    sessions = (
+        db.query(AttendanceSession)
+        .filter(
+            AttendanceSession.schedule_id.in_(schedule_ids),
+            AttendanceSession.status == "open",
+        )
+        .order_by(AttendanceSession.started_at.desc())
+        .all()
+    )
+
+    out = []
+    for sess in sessions:
+        sch = sess.schedule
+        course = sch.course if sch else None
+        out.append(
+            {
+                "session_id": sess.id,
+                "schedule_id": sess.schedule_id,
+                "course_name": course.name if course else None,
+                "course_code": course.code if course else None,
+                "schedule_label": f"{sch.day} {sch.start_time}-{sch.end_time}" if sch else None,
+                "room": sch.room if sch else None,
+                "started_at": sess.started_at,
+            }
+        )
+    return out
+
 
 @router.get("/my")
 def get_my_attendance(db: Session = Depends(get_db), current_user=Depends(get_current_user)):

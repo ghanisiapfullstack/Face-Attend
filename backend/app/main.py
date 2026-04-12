@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from .database import engine, Base
 from . import models
@@ -63,6 +66,16 @@ def run_light_migration():
                 )
             """))
 
+        avatar_col = conn.execute(text("""
+            SELECT COUNT(*) AS cnt
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'users'
+              AND column_name = 'avatar_path'
+        """)).scalar()
+        if not avatar_col:
+            conn.execute(text("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512) NULL"))
+
 run_light_migration()
 
 app = FastAPI(title="FaceAttend API", version="1.0.0")
@@ -76,22 +89,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routes
-from .routes import auth, users, attendance, face
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_AVATARS = _STATIC_DIR / "avatars"
+_AVATARS.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+from .routes import attendance, auth, courses, face, schedules, users
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(attendance.router, prefix="/api/attendance", tags=["Attendance"])
 app.include_router(face.router, prefix="/api/face", tags=["Face"])
+app.include_router(courses.router, prefix="/api/courses", tags=["Courses"])
+app.include_router(schedules.router, prefix="/api/schedules", tags=["Schedules"])
+
 
 @app.get("/")
 def root():
     return {"message": "FaceAttend API is running!"}
-
-from .routes import auth, users, attendance, face, courses
-
-app.include_router(courses.router, prefix="/api/courses", tags=["Courses"])
-
-from .routes import auth, users, attendance, face, courses, schedules
-
-app.include_router(schedules.router, prefix="/api/schedules", tags=["Schedules"])

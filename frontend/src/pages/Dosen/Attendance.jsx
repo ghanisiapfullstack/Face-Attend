@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import Sidebar from '../../components/Sidebar';
 import api from '../../utils/api';
+import AnimatedSection from '../../components/AnimatedSection';
+import GlassCard from '../../components/GlassCard';
+import { Camera, CalendarRange, Clock, Power, History, Edit3, Trash2, X, PlusCircle, UserCheck } from 'lucide-react';
+import { clsx } from 'clsx';
 
 export default function DosenAttendance() {
   const webcamRef = useRef(null);
@@ -17,6 +21,8 @@ export default function DosenAttendance() {
   const [log, setLog] = useState([]);
   const [liveStatus, setLiveStatus] = useState('');
   const [loading, setLoading] = useState(true);
+  
+  // Override Form states
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [editingOverrideId, setEditingOverrideId] = useState(null);
@@ -65,7 +71,7 @@ export default function DosenAttendance() {
     setLog((prev) => {
       const key = `${entry.nim}_${activeSessionId}`;
       if (prev.find((p) => p._key === key)) return prev;
-      return [{ ...entry, _key: key, time: new Date().toLocaleTimeString('id-ID') }, ...prev];
+      return [{ ...entry, _key: key, time: new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) }, ...prev];
     });
   }, [activeSessionId]);
 
@@ -74,7 +80,7 @@ export default function DosenAttendance() {
     stopCamera();
     setIsCameraActive(true);
     setConnecting(true);
-    setLiveStatus('Menghubungkan ke server...');
+    setLiveStatus('Menghubungkan ke server AI...');
 
     const token = localStorage.getItem('token');
     const ws = new WebSocket(`ws://localhost:8000/api/face/ws?token=${encodeURIComponent(token || '')}&session_id=${sessionId}`);
@@ -82,7 +88,7 @@ export default function DosenAttendance() {
 
     ws.onopen = () => {
       setConnecting(false);
-      setLiveStatus('Mendeteksi wajah...');
+      setLiveStatus('Mendeteksi wajah biometrik...');
       intervalRef.current = setInterval(() => {
         if (webcamRef.current && ws.readyState === WebSocket.OPEN) {
           const img = webcamRef.current.getScreenshot();
@@ -99,19 +105,23 @@ export default function DosenAttendance() {
         return;
       }
       if (!data.recognized) {
-        setLiveStatus('Mendeteksi wajah...');
+        setLiveStatus(data.message || 'Membaca fitur wajah...');
+        return;
+      }
+      if (data.rejected && data.reason === 'not_enrolled') {
+        setLiveStatus(`⚠ ${data.name}: ${data.message || 'Tidak terdaftar di MK ini'}`);
         return;
       }
       if (data.already_absent) {
-        setLiveStatus(`⚠ ${data.name} sudah absen di sesi ini`);
+        setLiveStatus(`⚠ ${data.name} sudah terekam di sesi ini`);
         return;
       }
-      setLiveStatus(`✓ ${data.name} berhasil absen`);
+      setLiveStatus(`✓ Autentikasi berhasil: ${data.name}`);
       addLog(data);
     };
 
     ws.onerror = () => {
-      setLiveStatus('Koneksi gagal. Coba lagi.');
+      setLiveStatus('Koneksi WebSocket terputus. Silakan mulai ulang kamera.');
       stopCamera();
     };
   }, [addLog, stopCamera]);
@@ -182,247 +192,285 @@ export default function DosenAttendance() {
   };
 
   const handleDeleteOverride = async (overrideId) => {
-    if (!confirm('Hapus kelas pengganti ini?')) return;
+    if (!confirm('Hapus rintisan jadwal kelas pengganti ini secara permanen?')) return;
     try {
       await api.delete(`/api/schedules/overrides/${overrideId}`);
       await refreshData();
     } catch (err) {
       console.error(err);
-      alert(err?.response?.data?.detail || 'Gagal menghapus kelas pengganti');
+      alert(err?.response?.data?.detail || 'Gagal menghapus jadwal pengganti');
     }
   };
 
   const statusColor = liveStatus.startsWith('✓')
-    ? 'rgba(34,197,94,0.88)'
+    ? 'rgba(16, 185, 129, 0.9)'
     : liveStatus.startsWith('⚠')
-      ? 'rgba(245,158,11,0.85)'
-      : 'rgba(0,0,0,0.6)';
+      ? 'rgba(245, 158, 11, 0.9)'
+      : 'rgba(0, 0, 0, 0.75)';
 
   return (
     <div className="layout">
       <Sidebar />
       <div className="main-content">
-        <div style={{ marginBottom: 28 }}>
-          <p className="page-title">Sesi Absensi Kelas</p>
-          <p className="page-sub">Buka sesi, scan mahasiswa bergantian, lalu tutup sesi untuk lock absensi</p>
-        </div>
+        <AnimatedSection delay={0.1}>
+          <div className="mb-8">
+            <h1 className="page-title">Sesi Absensi Kelas</h1>
+            <p className="page-sub">Pilih jadwal, aktifkan sensor biometrik untuk memindai wajah mahasiswa</p>
+          </div>
+        </AnimatedSection>
 
-        <div className="filter-bar" style={{ marginBottom: 18 }}>
-          <div>
-            <label className="input-label">Pilih Jadwal</label>
-            <select className="select-field" value={selectedSchedule} onChange={(e) => setSelectedSchedule(e.target.value)}>
-              <option value="">Pilih jadwal kelas</option>
-              {schedules.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-          </div>
-          <div style={{ marginLeft: 'auto', alignSelf: 'flex-end', display: 'flex', gap: 8 }}>
-            {!activeSessionId ? (
-              <button className="btn btn-primary" disabled={!selectedSchedule} onClick={handleOpenSession}>
-                Buka Sesi
-              </button>
-            ) : (
-              <>
-                <button className="btn btn-ghost" onClick={() => startCamera(activeSessionId)}>
-                  Aktifkan Kamera
-                </button>
-                <button className="btn btn-danger-soft" onClick={handleCloseSession}>
-                  Tutup Sesi
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-header">
-            <span className="card-title">Jadwal Mengajar & Kelas Pengganti</span>
-          </div>
-          {loading ? (
-            <div className="empty-state">Memuat jadwal...</div>
-          ) : schedules.length === 0 ? (
-            <div className="empty-state">Belum ada jadwal mengajar</div>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr><th>Mata Kuliah</th><th>Jadwal</th><th>Kelas Pengganti</th><th></th></tr></thead>
-                <tbody>
-                  {schedules.map((schedule) => (
-                    <tr key={schedule.id}>
-                      <td style={{ fontWeight: 500, color: 'var(--text-1)' }}>{schedule.course_name}</td>
-                      <td style={{ fontSize: 12 }}>
-                        {schedule.day} {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}<br />
-                        {schedule.room}
-                      </td>
-                      <td style={{ fontSize: 12 }}>
-                        {!schedule.overrides?.length ? (
-                          <span style={{ color: 'var(--text-3)' }}>Belum ada</span>
-                        ) : (
-                          schedule.overrides.map((override) => (
-                            <div key={override.id} style={{ marginBottom: 10 }}>
-                              <span className="badge badge-amber">Diubah {new Date(override.updated_at || override.created_at).toLocaleDateString('id-ID')}</span>
-                              <div style={{ marginTop: 4 }}>
-                                {new Date(override.replacement_date).toLocaleDateString('id-ID')} • {override.new_start_time.slice(0, 5)} - {override.new_end_time.slice(0, 5)} • {override.new_room || schedule.room}
-                              </div>
-                              {override.reason && <div style={{ color: 'var(--text-3)' }}>{override.reason}</div>}
-                              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                                <button className="btn btn-ghost btn-sm" onClick={() => openOverrideModal(schedule, override)}>Edit</button>
-                                <button className="btn btn-danger-soft btn-sm" onClick={() => handleDeleteOverride(override.id)}>Hapus</button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </td>
-                      <td>
-                        <button className="btn btn-primary btn-sm" onClick={() => openOverrideModal(schedule)}>
-                          Kelas Pengganti
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <AnimatedSection delay={0.2}>
+          <GlassCard className="mb-6 p-5">
+            <div className="flex flex-col md:flex-row gap-4 items-end justify-between">
+              <div className="w-full md:w-[60%]">
+                <label className="input-label">Pilih Jadwal Kelas Terdaftar</label>
+                <select className="select-field" value={selectedSchedule} onChange={(e) => setSelectedSchedule(e.target.value)} disabled={activeSessionId !== null}>
+                  <option value="">-- Silakan Pilih Jadwal Kelas --</option>
+                  {schedules.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-3 w-full md:w-auto">
+                {!activeSessionId ? (
+                  <button className="btn btn-accent w-full md:w-auto" disabled={!selectedSchedule} onClick={handleOpenSession}>
+                    <Power size={16} /> Buka Sesi Absensi
+                  </button>
+                ) : (
+                  <>
+                    <button className={clsx("btn", isCameraActive ? "btn-ghost" : "btn-primary")} onClick={() => isCameraActive ? stopCamera() : startCamera(activeSessionId)}>
+                      <Camera size={16} /> {isCameraActive ? 'Jeda Kamera' : 'Mulai Sensor AI'}
+                    </button>
+                    <button className="btn btn-danger-soft" onClick={handleCloseSession}>
+                      <X size={16} /> Akhiri & Kunci Sesi
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          </GlassCard>
+        </AnimatedSection>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
-          <div className="card">
-            <div style={{ padding: 16 }}>
-              {loading ? (
-                <div className="empty-state">Memuat data sesi...</div>
-              ) : !activeSessionId ? (
-                <div className="empty-state">Belum ada sesi aktif. Pilih jadwal lalu klik "Buka Sesi".</div>
-              ) : (
-                <div style={{ borderRadius: 9, overflow: 'hidden', position: 'relative', background: '#090c12', border: '1px solid var(--border)' }}>
-                  {isCameraActive ? (
-                    <>
-                      <Webcam
-                        ref={webcamRef}
-                        screenshotFormat="image/jpeg"
-                        screenshotQuality={0.85}
-                        style={{ width: '100%', display: 'block' }}
-                        videoConstraints={{ facingMode: 'user', width: 1280, height: 720 }}
-                        mirrored
-                      />
-                      <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.65)', borderRadius: 7, padding: '4px 10px', color: '#fff', fontSize: 11 }}>
-                        {connecting ? 'Menghubungkan...' : `Sesi #${activeSessionId} aktif`}
-                      </div>
-                      {liveStatus && (
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 16px', textAlign: 'center', fontSize: 13, fontWeight: 500, color: '#fff', background: statusColor }}>
-                          {liveStatus}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+          {/* CAMERA SECTION */}
+          <div className="lg:col-span-8">
+            <AnimatedSection delay={0.3}>
+              <GlassCard className="p-0 h-full overflow-hidden border-[var(--border)] ring-1 ring-[var(--border)] relative bg-[#050505]">
+                {loading ? (
+                  <div className="empty-state py-32">Menginisialisasi modul...</div>
+                ) : !activeSessionId ? (
+                  <div className="flex flex-col items-center justify-center py-32 px-6 text-center text-[var(--text-3)] bg-[var(--surface)]">
+                    <div className="w-16 h-16 rounded-2xl bg-[var(--surface2)] flex items-center justify-center mb-4">
+                      <Camera size={32} className="opacity-50" />
+                    </div>
+                    <p className="font-semibold text-[var(--text-1)] mb-1">Kamera Tidak Aktif</p>
+                    <p className="text-sm">Buka sesi absensi terlebih dahulu pada form di atas.</p>
+                  </div>
+                ) : (
+                  <div className="relative w-full aspect-video bg-black flex items-center justify-center">
+                    {isCameraActive ? (
+                      <>
+                        <Webcam
+                          ref={webcamRef}
+                          screenshotFormat="image/jpeg"
+                          screenshotQuality={0.85}
+                          className="w-full object-cover aspect-video"
+                          videoConstraints={{ facingMode: 'user' }}
+                          mirrored
+                        />
+                        {/* Overlay HUD */}
+                        <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md rounded-lg px-3 py-1.5 flex items-center gap-2 border border-white/10 z-10">
+                          <div className="w-2 h-2 rounded-full overflow-hidden relative">
+                             <div className="absolute inset-0 bg-[var(--green)] animate-ping opacity-75"></div>
+                             <div className="absolute inset-0 bg-[var(--green)]"></div>
+                          </div>
+                          <span className="text-white text-xs font-bold tracking-wider">LIVE_FEED_ID:{activeSessionId}</span>
                         </div>
-                      )}
-                    </>
+                        {liveStatus && (
+                          <div 
+                            className="absolute bottom-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full text-white text-sm font-bold shadow-2xl backdrop-blur-md transition-all duration-300 z-10 flex items-center gap-2 border border-white/20 whitespace-nowrap"
+                            style={{ background: statusColor }}
+                          >
+                            {liveStatus}
+                          </div>
+                        )}
+                        {/* Scanning grid cosmetic */}
+                        <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[linear-gradient(rgba(255,255,255,0)_0%,rgba(255,255,255,1)_50%,rgba(255,255,255,0)_100%)] bg-[length:100%_4px]" style={{ animation: 'scan 4s linear infinite' }}></div>
+                        <style>{`@keyframes scan { 0% { background-position: 0 0 } 100% { background-position: 0 100% } }`}</style>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center text-[var(--text-3)]">
+                        <Camera size={48} className="mb-4 opacity-20" />
+                        <p className="text-sm font-medium">Sensor dijeda. Klik "Mulai Sensor AI" untuk melanjutkan.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </GlassCard>
+            </AnimatedSection>
+          </div>
+
+          {/* REALTIME LOG SECTION */}
+          <div className="lg:col-span-4 max-h-[600px] flex flex-col">
+            <AnimatedSection delay={0.4} className="h-full">
+              <GlassCard className="p-0 h-full flex flex-col">
+                <div className="card-header border-b border-[var(--border)] px-5 py-4 flex justify-between items-center bg-[var(--surface2)]">
+                  <div className="flex items-center gap-2">
+                    <UserCheck size={16} className="text-[var(--accent)]" />
+                    <span className="font-bold text-[var(--text-1)] text-sm uppercase tracking-wide">Live Log</span>
+                  </div>
+                  <span className="badge bg-[var(--accent-bg)] text-[var(--accent)]">{log.length} Terekam</span>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto custom-scrollbar bg-[var(--surface)] p-2">
+                  {log.length === 0 ? (
+                    <div className="empty-state h-full flex flex-col justify-center">Belum ada wajah terdeteksi</div>
                   ) : (
-                    <div style={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)' }}>
-                      Kamera belum aktif. Klik "Aktifkan Kamera".
+                    <div className="flex flex-col gap-2">
+                      {log.map((entry, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface2)] border border-[var(--border2)] hover:border-[var(--accent)] transition-colors animate-in fade-in slide-in-from-right-4 duration-300">
+                          <div className="w-10 h-10 rounded-xl bg-[var(--bg)] border border-[var(--border)] text-[var(--text-1)] flex items-center justify-center font-bold shadow-inner">
+                            {entry.name?.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-[var(--text-1)] truncate leading-tight">{entry.name}</p>
+                            <p className="text-[11px] font-medium text-[var(--text-3)] uppercase tracking-wider">{entry.nim}</p>
+                          </div>
+                          <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                            <span className={clsx("badge py-0.5 px-2 text-[10px]", entry.status === 'hadir' ? 'badge-green' : 'badge-amber')}>
+                              {entry.status === 'hadir' ? 'Hadir' : 'Terlambat'}
+                            </span>
+                            <span className="text-[10px] font-bold text-[var(--text-3)] font-mono">{entry.time}</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+              </GlassCard>
+            </AnimatedSection>
           </div>
+        </div>
 
-          <div className="card" style={{ position: 'sticky', top: 20 }}>
-            <div className="card-header">
-              <span className="card-title">Log Sesi Aktif</span>
-              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{log.length} orang</span>
+        <AnimatedSection delay={0.5}>
+          <GlassCard className="p-0 border-[var(--blue-bg)] mb-6">
+            <div className="card-header border-b border-[var(--border)] px-6 py-4">
+              <span className="card-title">Manajemen Rintisan Jadwal & Pengganti</span>
             </div>
-            {log.length === 0 ? (
-              <div className="empty-state">Belum ada absensi masuk</div>
+            {loading ? (
+              <div className="empty-state py-12">Memuat jadwal...</div>
+            ) : schedules.length === 0 ? (
+              <div className="empty-state py-12">Belum ada jadwal dialokasikan ke Anda</div>
             ) : (
-              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-                {log.map((entry, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-bg)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600 }}>
-                      {entry.name?.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)', margin: 0 }}>{entry.name}</p>
-                      <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{entry.nim}</p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span className={`badge ${entry.status === 'hadir' ? 'badge-green' : 'badge-amber'}`}>
-                        {entry.status === 'hadir' ? 'Hadir' : 'Terlambat'}
-                      </span>
-                      <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '3px 0 0' }}>{entry.time}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="table-wrap custom-scrollbar rounded-none border-none">
+                <table className="data-table">
+                  <thead><tr><th>Mata Kuliah Reguler</th><th>Jadwal Utama</th><th>Status Perubahan Kelas</th><th className="text-right">Aksi</th></tr></thead>
+                  <tbody>
+                    {schedules.map((schedule) => (
+                      <tr key={schedule.id}>
+                        <td className="align-top">
+                          <div className="font-bold text-[var(--text-1)] text-sm mb-1">{schedule.course_name}</div>
+                          <div className="text-xs text-[var(--text-3)] uppercase font-semibold">Reguler</div>
+                        </td>
+                        <td className="align-top">
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--text-2)] mb-1">
+                            {schedule.day} • {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}
+                          </div>
+                          <div className="text-xs text-[var(--text-3)]">R. {schedule.room}</div>
+                        </td>
+                        <td className="align-top">
+                          {!schedule.overrides?.length ? (
+                            <span className="text-[12px] font-medium text-[var(--text-3)]">Tidak ada penggantian</span>
+                          ) : (
+                            <div className="flex flex-col gap-3">
+                              {schedule.overrides.map((override) => (
+                                <div key={override.id} className="bg-[var(--surface2)] border border-[var(--border2)] rounded-xl p-3 relative">
+                                  <div className="absolute top-3 right-3 flex gap-1">
+                                    <button className="p-1.5 text-[var(--text-3)] hover:text-blue-500 rounded bg-[var(--surface)] transition-colors" onClick={() => openOverrideModal(schedule, override)}><Edit3 size={12} /></button>
+                                    <button className="p-1.5 text-[var(--text-3)] hover:text-red-500 rounded bg-[var(--surface)] transition-colors" onClick={() => handleDeleteOverride(override.id)}><Trash2 size={12} /></button>
+                                  </div>
+                                  <div className="badge badge-amber mb-2 w-max text-[10px]">Dialihkan</div>
+                                  <div className="text-xs font-medium text-[var(--text-1)] leading-relaxed">
+                                    Tanggal: {new Date(override.replacement_date).toLocaleDateString('id-ID', { weekday: 'long', day:'numeric', month:'long' })}<br/>
+                                    Jam: {override.new_start_time.slice(0, 5)} - {override.new_end_time.slice(0, 5)}<br/>
+                                    Ruang: {override.new_room || schedule.room}
+                                  </div>
+                                  {override.reason && <div className="mt-2 text-[11px] text-[var(--text-3)] italic">Ket: {override.reason}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="align-top text-right">
+                          <button className="btn btn-ghost btn-sm border-[var(--border)]" onClick={() => openOverrideModal(schedule)}>
+                            <PlusCircle size={14} /> Atur Pengganti
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="card" style={{ marginTop: 20 }}>
-          <div className="card-header">
-            <span className="card-title">Riwayat Sesi</span>
-          </div>
-          {sessions.length === 0 ? (
-            <div className="empty-state">Belum ada sesi dibuat</div>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr><th>#</th><th>Mata Kuliah</th><th>Jadwal</th><th>Mulai</th><th>Selesai</th><th>Status</th><th>Jumlah Absen</th></tr></thead>
-                <tbody>
-                  {sessions.map((s, i) => (
-                    <tr key={s.id}>
-                      <td style={{ color: 'var(--text-3)' }}>{i + 1}</td>
-                      <td>{s.course_name || '—'}</td>
-                      <td style={{ fontSize: 12 }}>{s.schedule_label || '—'}</td>
-                      <td style={{ fontSize: 12 }}>{new Date(s.started_at).toLocaleString('id-ID')}</td>
-                      <td style={{ fontSize: 12 }}>{s.ended_at ? new Date(s.ended_at).toLocaleString('id-ID') : '—'}</td>
-                      <td><span className={`badge ${s.status === 'open' ? 'badge-green' : 'badge-amber'}`}>{s.status}</span></td>
-                      <td>{s.attendance_count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+          </GlassCard>
+        </AnimatedSection>
 
         {showOverrideModal && editingSchedule && (
-          <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowOverrideModal(false)}>
-            <div className="modal">
-              <h2 className="modal-title">{editingOverrideId ? 'Edit Kelas Pengganti' : 'Tambah Kelas Pengganti'}</h2>
-              <form onSubmit={handleSaveOverride}>
-                <div style={{ marginBottom: 14 }}>
-                  <label className="input-label">Tanggal Pertemuan Asal</label>
-                  <input type="date" className="input" value={overrideForm.original_date} onChange={(e) => setOverrideForm({ ...overrideForm, original_date: e.target.value })} required />
+          <div className="modal-backdrop bg-black/80 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && setShowOverrideModal(false)}>
+            <AnimatedSection className="w-full max-w-[500px]">
+              <GlassCard className="p-8 border border-[var(--border2)]">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-[var(--text-1)]">{editingOverrideId ? 'Edit Perubahan Jadwal' : 'Buat Kelas Pengganti'}</h2>
+                  <button onClick={() => setShowOverrideModal(false)} className="text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors"><X size={20} /></button>
                 </div>
-                <div style={{ marginBottom: 14 }}>
-                  <label className="input-label">Tanggal Pengganti</label>
-                  <input type="date" className="input" value={overrideForm.replacement_date} onChange={(e) => setOverrideForm({ ...overrideForm, replacement_date: e.target.value })} required />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                  <div>
-                    <label className="input-label">Jam Mulai Baru</label>
-                    <input type="time" className="input" value={overrideForm.new_start_time} onChange={(e) => setOverrideForm({ ...overrideForm, new_start_time: e.target.value })} required />
+
+                <form onSubmit={handleSaveOverride} className="space-y-5">
+                  <div className="bg-[var(--surface2)] p-4 rounded-xl border border-[var(--border)] mb-2">
+                    <p className="text-xs text-[var(--text-3)] uppercase font-bold tracking-wider mb-1">Mata Kuliah Target</p>
+                    <p className="text-sm font-semibold text-[var(--text-1)]">{editingSchedule.course_name}</p>
                   </div>
-                  <div>
-                    <label className="input-label">Jam Selesai Baru</label>
-                    <input type="time" className="input" value={overrideForm.new_end_time} onChange={(e) => setOverrideForm({ ...overrideForm, new_end_time: e.target.value })} required />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="input-label">Tgl. Asal (Ditiadakan)</label>
+                      <input type="date" className="input bg-[var(--bg)]" value={overrideForm.original_date} onChange={(e) => setOverrideForm({ ...overrideForm, original_date: e.target.value })} required />
+                    </div>
+                    <div>
+                      <label className="input-label">Tgl. Baru (Pengganti)</label>
+                      <input type="date" className="input border-[var(--accent)] bg-[var(--accent-bg)] shadow-[0_0_0_1px_var(--accent)]" value={overrideForm.replacement_date} onChange={(e) => setOverrideForm({ ...overrideForm, replacement_date: e.target.value })} required />
+                    </div>
                   </div>
-                </div>
-                <div style={{ marginBottom: 14 }}>
-                  <label className="input-label">Ruangan Baru</label>
-                  <input type="text" className="input" value={overrideForm.new_room} onChange={(e) => setOverrideForm({ ...overrideForm, new_room: e.target.value })} required />
-                </div>
-                <div style={{ marginBottom: 14 }}>
-                  <label className="input-label">Alasan</label>
-                  <textarea className="input" value={overrideForm.reason} onChange={(e) => setOverrideForm({ ...overrideForm, reason: e.target.value })} rows={3} />
-                </div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                    {editingOverrideId ? 'Simpan Perubahan' : 'Buat Kelas Pengganti'}
-                  </button>
-                  <button type="button" className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setShowOverrideModal(false)}>
-                    Batal
-                  </button>
-                </div>
-              </form>
-            </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="input-label">Jam Mulai Baru</label>
+                      <input type="time" className="input bg-[var(--bg)]" value={overrideForm.new_start_time} onChange={(e) => setOverrideForm({ ...overrideForm, new_start_time: e.target.value })} required />
+                    </div>
+                    <div>
+                      <label className="input-label">Jam Selesai Baru</label>
+                      <input type="time" className="input bg-[var(--bg)]" value={overrideForm.new_end_time} onChange={(e) => setOverrideForm({ ...overrideForm, new_end_time: e.target.value })} required />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="input-label">Ruangan Baru</label>
+                    <input type="text" className="input bg-[var(--bg)]" value={overrideForm.new_room} onChange={(e) => setOverrideForm({ ...overrideForm, new_room: e.target.value })} required />
+                  </div>
+                  
+                  <div>
+                    <label className="input-label">Alasan Pemindahan (Opsional)</label>
+                    <textarea className="input bg-[var(--bg)] resize-none" value={overrideForm.reason} onChange={(e) => setOverrideForm({ ...overrideForm, reason: e.target.value })} rows={2} placeholder="Misal: Dosen berhalangan dinas..." />
+                  </div>
+                  
+                  <div className="flex gap-3 pt-4">
+                    <button type="submit" className="btn btn-accent flex-1 justify-center py-3">
+                      {editingOverrideId ? 'Update Jadwal' : 'Simpan & Publikasikan'}
+                    </button>
+                    <button type="button" className="btn btn-ghost border-[var(--border)] px-6" onClick={() => setShowOverrideModal(false)}>
+                      Batal
+                    </button>
+                  </div>
+                </form>
+              </GlassCard>
+            </AnimatedSection>
           </div>
         )}
       </div>
