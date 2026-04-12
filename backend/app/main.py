@@ -76,7 +76,8 @@ def run_light_migration():
         if not avatar_col:
             conn.execute(text("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512) NULL"))
 
-run_light_migration()
+if "sqlite" not in str(engine.url):
+    run_light_migration()
 
 app = FastAPI(title="FaceAttend API", version="1.0.0")
 
