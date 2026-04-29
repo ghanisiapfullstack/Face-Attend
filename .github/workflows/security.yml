@@ -1,30 +1,67 @@
-name: Security scan
+name: Security Scan - Face-Attend
 
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [main, master]
   schedule:
-    - cron: '0 8 * * 1'  # setiap Senin jam 8 pagi
+    - cron: '0 8 * * 1'  # otomatis scan setiap Senin jam 8 pagi
 
 jobs:
-  security:
+  # ─── Scan celah keamanan di dependencies Python ────
+  dependency-scan:
+    name: Dependency vulnerability scan
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install & scan dengan Safety
+      - name: Scan dengan pip-audit
         run: |
-          pip install safety
-          pip install -r requirements.txt
-          safety check || true   # pakai || true agar tidak block CI
+          pip install pip-audit
+          pip-audit -r requirements.txt || true
 
-      - name: Scan secrets dengan TruffleHog
-        uses: trufflesecurity/trufflehog@main
+  # ─── Scan secrets & credentials yang bocor ─────────
+  secret-scan:
+    name: Secret leak scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          path: ./
-          base: HEAD~1
+          fetch-depth: 0  # perlu full history untuk scan semua commit
+
+      - name: Scan dengan Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Scan celah di kode Python (SAST) ──────────────
+  code-scan:
+    name: Static code analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Scan dengan Bandit
+        run: |
+          pip install bandit
+          bandit -r . \
+            --exclude ./.git,./venv,./env \
+            -ll \
+            --format txt || true
