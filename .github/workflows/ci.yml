@@ -32,7 +32,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r backend/requirements.txt
 
       - name: Check imports & syntax
         run: |
@@ -49,11 +49,8 @@ jobs:
             --per-file-ignores="__init__.py:F401" \
             --statistics || true
 
-      - name: Run tests (jika ada)
+      - name: Run tests
         run: |
           pip install pytest httpx
-          if [ -d "tests" ]; then
-            pytest tests/ -v
-          else
-            echo "Belum ada folder tests/, skip"
-          fi
+          cd backend
+          pytest tests/ -v
