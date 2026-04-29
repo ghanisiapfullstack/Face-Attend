@@ -2,9 +2,9 @@ name: Security Scan - Face-Attend
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, testing]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, testing]
   schedule:
     - cron: '0 8 * * 1'  # otomatis scan setiap Senin jam 8 pagi
 
