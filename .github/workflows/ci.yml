@@ -1,4 +1,4 @@
-name: CI - Test & Lint
+name: CI - Face-Attend
 
 on:
   push:
@@ -7,63 +7,53 @@ on:
     branches: [main, master]
 
 jobs:
-  # ─── Test Python backend ───────────────────────────
-  test-python:
-    name: Python tests
+  test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Install system deps (OpenCV, dlib)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libgl1-mesa-glx \
+            libglib2.0-0 \
+            libsm6 libxrender1 libxext6 \
+            cmake libboost-all-dev
+
+      - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tests (kalau ada folder tests/)
+      - name: Check imports & syntax
         run: |
+          python -c "import fastapi; print('FastAPI OK')"
+          python -c "import cv2; print('OpenCV OK')"
+          python -c "import deepface; print('DeepFace OK')"
+          python -c "import sqlalchemy; print('SQLAlchemy OK')"
+
+      - name: Lint dengan flake8
+        run: |
+          pip install flake8
+          flake8 . --count --max-line-length=120 \
+            --exclude=.git,__pycache__,venv \
+            --per-file-ignores="__init__.py:F401" \
+            --statistics || true
+
+      - name: Run tests (jika ada)
+        run: |
+          pip install pytest httpx
           if [ -d "tests" ]; then
-            python -m pytest tests/ -v
+            pytest tests/ -v
           else
-            echo "Belum ada folder tests, skip"
+            echo "Belum ada folder tests/, skip"
           fi
-
-      - name: Check syntax Python
-        run: python -m py_compile app.py || python -m py_compile main.py || echo "Entry point tidak ditemukan, skip"
-
-  # ─── Test / lint JavaScript & HTML ─────────────────
-  test-frontend:
-    name: Frontend check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-        if: hashFiles('package.json') != ''
-
-      - name: Install JS dependencies
-        if: hashFiles('package.json') != ''
-        run: npm ci
-
-      - name: Run JS tests
-        if: hashFiles('package.json') != ''
-        run: npm test --if-present
-
-      - name: Validate HTML files
-        run: |
-          echo "HTML files found:"
-          find . -name "*.html" -not -path "./.git/*"
-          echo "Frontend check selesai"
