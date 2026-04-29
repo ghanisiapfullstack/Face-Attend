@@ -1,0 +1,30 @@
+name: Security scan
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '0 8 * * 1'  # setiap Senin jam 8 pagi
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install & scan dengan Safety
+        run: |
+          pip install safety
+          pip install -r requirements.txt
+          safety check || true   # pakai || true agar tidak block CI
+
+      - name: Scan secrets dengan TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: HEAD~1
