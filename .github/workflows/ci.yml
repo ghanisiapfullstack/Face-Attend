@@ -2,9 +2,9 @@ name: CI - Face-Attend
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, testing]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, testing]
 
 jobs:
   test:
