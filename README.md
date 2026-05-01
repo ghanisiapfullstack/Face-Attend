@@ -228,24 +228,6 @@ Auth: `Authorization: Bearer <token>`
 
 > 📖 Dokumentasi interaktif: `http://localhost:8000/docs`
 
----
-
-## 📚 Dokumentasi
-
-| Dokumen | Deskripsi |
-|---|---|
-| [PRD](docs/PRD.md) | Product Requirements Document |
-| [ERD](docs/ERD_mermaid.md) | Entity Relationship Diagram (Mermaid) |
-| [Use Case](docs/UML_1_usecase.md) | Use Case Diagram (Mermaid) |
-| [Class Diagram](docs/UML_2_classdiagram.md) | Class Diagram (Mermaid) |
-| [Sequence Diagram](docs/UML_3_sequence.md) | Sequence Diagram — Sesi Absensi |
-| [Activity Diagram](docs/UML_4_activity.md) | Activity Diagram — Face Recognition |
-| [ML README](ml_model/README_ML.md) | Panduan model, training, testing |
-
-> 🔗 Paste isi file `.md` ke [mermaid.live](https://mermaid.live) untuk render diagram.
-
----
-
 ## 🔧 Troubleshooting
 
 | Gejala | Solusi |
@@ -259,13 +241,6 @@ Auth: `Authorization: Bearer <token>`
 
 ---
 
-## 👥 Tim
-
-| Nama | Role |
-|---|---|
-| Ghani | Full Stack + ML |
-
----
 
 ## 📄 Lisensi
 
