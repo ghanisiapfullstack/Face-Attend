@@ -1,7 +1,7 @@
 # 🎓 FaceAttend
 
 > Sistem absensi kelas otomatis berbasis **pengenalan wajah** untuk perguruan tinggi.
-> Mahasiswa cukup menghadap kamera — sistem mencatat kehadiran secara real-time.
+> Mahasiswa cukup menghadap kamera lalu sistem mencatat kehadiran secara real-time.
 
 ![Tech Stack](https://img.shields.io/badge/Frontend-React_19-61DAFB?logo=react)
 ![Tech Stack](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)
