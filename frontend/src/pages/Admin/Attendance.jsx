@@ -42,9 +42,15 @@ export default function AdminAttendance() {
   };
 
   const filtered = filterDate
-    ? attendances.filter(a =>
-        new Date(a.check_in_time).toLocaleDateString('id-ID') ===
-        new Date(filterDate).toLocaleDateString('id-ID'))
+    ? attendances.filter(a => {
+        const checkIn = new Date(a.check_in_time);
+        const filter = new Date(filterDate);
+        return (
+          checkIn.getFullYear() === filter.getFullYear() &&
+          checkIn.getMonth() === filter.getMonth() &&
+          checkIn.getDate() === filter.getDate()
+        );
+      })
     : attendances;
 
   const totalHadir = filtered.filter(a => a.status === 'hadir').length;

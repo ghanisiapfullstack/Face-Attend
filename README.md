@@ -1,246 +1,272 @@
-# FaceAttend
+# 🎓 FaceAttend
 
-Sistem absensi kelas berbasis **pengenalan wajah**. Admin mengelola data master; dosen (atau admin) membuka **sesi absensi** per jadwal; mahasiswa cukup menghadapkan wajah ke kamera tanpa login per orang.
+> Sistem absensi kelas otomatis berbasis **pengenalan wajah** untuk perguruan tinggi.
+> Mahasiswa cukup menghadap kamera — sistem mencatat kehadiran secara real-time.
 
----
-
-## Isi dokumentasi
-
-1. [Arsitektur singkat](#arsitektur-singkat)
-2. [Struktur folder](#struktur-folder)
-3. [Prasyarat](#prasyarat)
-4. [Database MySQL](#database-mysql)
-5. [Model wajah (embeddings)](#model-wajah-embeddings)
-6. [Menjalankan backend](#menjalankan-backend)
-7. [Menjalankan frontend](#menjalankan-frontend)
-8. [Peran pengguna & alur kerja](#peran-pengguna--alur-kerja)
-9. [Ringkasan API](#ringkasan-api)
-10. [Sesi absensi & WebSocket](#sesi-absensi--websocket)
-11. [Profil, password & notifikasi mahasiswa](#profil-password--notifikasi-mahasiswa)
-12. [Akurasi wajah & enrollment](#akurasi-wajah--enrollment)
-13. [Masalah umum](#masalah-umum)
+![Tech Stack](https://img.shields.io/badge/Frontend-React_19-61DAFB?logo=react)
+![Tech Stack](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)
+![Tech Stack](https://img.shields.io/badge/Database-Supabase-3ECF8E?logo=supabase)
+![Tech Stack](https://img.shields.io/badge/AI-ArcFace_DeepFace-FF6F00?logo=tensorflow)
 
 ---
 
-## Arsitektur singkat
+## 📋 Daftar Isi
+
+- [Demo & Screenshot](#-demo--screenshot)
+- [Fitur Utama](#-fitur-utama)
+- [Arsitektur](#-arsitektur)
+- [Struktur Folder](#-struktur-folder)
+- [Cara Menjalankan](#-cara-menjalankan)
+- [Face Recognition Setup](#-face-recognition-setup)
+- [API Reference](#-api-reference)
+- [Dokumentasi](#-dokumentasi)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
+## ✨ Fitur Utama
+
+| Fitur | Deskripsi |
+|---|---|
+| 🤖 **Face Recognition** | ArcFace (DeepFace) — pengenalan wajah real-time via webcam |
+| ⚡ **Real-time WebSocket** | Frame kamera dikirim setiap 450ms, hasil langsung tampil di Live Log |
+| 🔐 **Role-based Access** | Admin, Dosen, Mahasiswa — masing-masing dengan akses berbeda |
+| 📅 **Kalender Interaktif** | Mahasiswa lihat jadwal per bulan, termasuk kelas pengganti |
+| 🔔 **Notifikasi Sesi** | Banner otomatis muncul jika ada sesi absensi aktif untuk MK yang diikuti |
+| 📊 **Dashboard Analytics** | Statistik kehadiran per mata kuliah dengan progress bar |
+| 🔄 **Jadwal Pengganti** | Dosen bisa reschedule kelas dengan tanggal/jam/ruangan baru |
+| 👤 **Profil & Avatar** | Upload foto profil, ganti nama dan password |
+
+---
+
+## 🏗 Arsitektur
 
 ```
-┌─────────────┐     HTTP (REST)      ┌─────────────┐
-│   React     │ ◄──────────────────► │   FastAPI   │
-│   (Vite)    │     Bearer JWT       │   Backend   │
-└─────────────┘                      └──────┬──────┘
-       │                                   │
-       │  WebSocket (scan wajah)           │  SQLAlchemy
-       └──────────────────────────────────►│  MySQL
-                                           └─────────────┘
-
-Embeddings wajah: file JSON (DeepFace Facenet) ──► dibaca saat inferensi
+┌─────────────────────────────────────────────────────────┐
+│                  React Frontend (Vite)                  │
+│         Admin │ Dosen │ Mahasiswa │ Profile             │
+└──────────────────────┬──────────────────────────────────┘
+                       │  HTTP REST + WebSocket (JWT)
+┌──────────────────────▼──────────────────────────────────┐
+│               FastAPI Backend (Uvicorn)                 │
+│   /api/auth  /api/users  /api/courses  /api/schedules   │
+│   /api/attendance  /api/face/ws (WebSocket)             │
+└──────────┬──────────────────────────┬───────────────────┘
+           │                          │
+    PostgreSQL                 DeepFace ArcFace
+    (Supabase)                 embeddings.json
 ```
 
-- **Frontend**: React 19, Vite, React Router, Axios, `react-webcam`, `framer-motion`, `date-fns`, `lucide-react`.
-- **Backend**: FastAPI, SQLAlchemy, MySQL, JWT (`python-jose` + bcrypt).
-- **Face recognition**: DeepFace (Facenet), OpenCV, NumPy. Embedding referensi disimpan di `ml_model/embeddings.json` dan otomatis di-*cache* (in-memory) saat server berjalan.
+---
+
+## 📁 Struktur Folder
+
+```
+face-attend/
+├── frontend/               # React 19 + Vite
+│   └── src/
+│       ├── pages/          # Admin, Dosen, Mahasiswa, Auth, Profile
+│       ├── components/     # Sidebar, TopNav, GlassCard, dll
+│       ├── context/        # AuthContext, ThemeContext
+│       └── utils/api.js    # Axios instance + interceptor
+│
+├── backend/                # FastAPI
+│   ├── app/
+│   │   ├── main.py         # Entry point, CORS, router, migrations
+│   │   ├── models.py       # SQLAlchemy models
+│   │   ├── auth.py         # JWT, bcrypt, dependencies
+│   │   ├── database.py     # PostgreSQL connection
+│   │   ├── face_recognition.py  # ArcFace inference
+│   │   └── routes/         # auth, users, courses, schedules, attendance, face
+│   ├── scripts/
+│   │   └── ensure_admin.py # Buat/reset akun admin
+│   └── requirements.txt
+│
+├── ml_model/               # Machine Learning
+│   ├── dataset/            # Foto per orang (subfolder = nama)
+│   ├── train.py            # Generate embeddings.json
+│   ├── test.py             # Evaluasi akurasi model
+│   └── FaceAttend_ML.ipynb # Notebook untuk Google Colab
+│
+└── docs/                   # Dokumentasi
+    ├── PRD.md
+    ├── ERD_mermaid.md
+    ├── UML_1_usecase.md
+    ├── UML_2_classdiagram.md
+    ├── UML_3_sequence.md
+    └── UML_4_activity.md
+```
 
 ---
 
-## Pembaruan Terkini (Performa & UI)
+## 🚀 Cara Menjalankan
 
-1. **Async Backend Optimization**: Proses deteksi DeepFace sekarang berjalan di dalam **threadpool** (`run_in_threadpool`) agar WebSocket tidak memblokir (*freeze*) antrean *event loop* ketika banyak mahasiswa absen bersamaan.
-2. **In-Memory Cache**: `embeddings.json` tidak lagi dibaca secara berulang dari disk per-frame, melainkan disimpan pada Memory/RAM.
-3. **UI Mahasiswa**: Fitur kalender interaktif untuk halaman Jadwal menggunakan *CSS Grid* dan pustaka `date-fns`. Halaman riwayat absensi dirombak menjadi tampilan jejak waktu (*Timeline*), dilengkapi animasi UX menggunakan `framer-motion`.
-4. **Profil & password**: Halaman **Profil** (`/profile`) untuk semua role — ubah nama, unggah foto, ganti kata sandi (dengan verifikasi kata sandi lama). Admin dapat **reset password** dari menu **Users & Role**.
-5. **Enrollment wajib di sesi**: Hanya mahasiswa yang **terdaftar** di mata kuliah jadwal tersebut yang bisa dikenali dan dicatat absensinya lewat WebSocket; embedding hanya dibandingkan ke mahasiswa terdaftar itu (mengurangi salah orang lintas kelas).
-6. **Akurasi wajah**: Ambang (`FACE_MATCH_THRESHOLD`) dan **margin** antara skor terbaik vs kedua (`FACE_MATCH_MARGIN`) bisa diatur lewat `backend/.env`. Inferensi memakai kandidat terbatas per MK.
-7. **Notifikasi mahasiswa**: Endpoint `GET /api/attendance/live/open-for-me` + polling di dashboard mahasiswa menampilkan banner jika ada sesi absensi **terbuka** untuk MK yang diikuti.
-8. **Static files**: Foto profil dilayani di `/static/avatars/…` (folder `backend/static/avatars/`).
+### Prasyarat
+- Python 3.11+
+- Node.js 18+
+- Akun [Supabase](https://supabase.com) (gratis)
 
----
+### 1. Clone & Setup
 
-## Struktur folder
+```bash
+git clone https://github.com/username/face-attend.git
+cd face-attend
+```
 
-| Path | Fungsi |
-|------|--------|
-| `frontend/` | UI web: hal_admin, dosen, mahasiswa; konteks auth; pemanggilan API. |
-| `backend/app/main.py` | Entry FastAPI: CORS, router, `create_all`, migrasi ringan, mount `/static`. |
-| `backend/app/models.py` | Entitas DB: User, Student, Lecturer, Course, Schedule, AttendanceSession, Attendance. |
-| `backend/app/database.py` | URL koneksi MySQL & session factory. |
-| `backend/app/auth.py` | JWT, hash password, `get_current_user`, `require_admin`, `require_dosen`. |
-| `backend/app/routes/` | `auth`, `users`, `attendance`, `schedules`, `courses`, `face` (termasuk WebSocket). |
-| `backend/app/face_recognition.py` | Load embeddings, pencocokan dengan margin & kandidat terdaftar. |
-| `backend/scripts/ensure_admin.py` | (Dev) buat atau reset user admin. |
-| `ml_model/` | `train.py` (bikin `embeddings.json` dari folder foto), `predict.py` (uji cepat). |
-
----
-
-## Prasyarat
-
-- **Python** 3.x (disarankan sesuai yang dipakai di venv proyek).
-- **Node.js** + npm (untuk Vite/React).
-- **MySQL** berjalan lokal (atau sesuaikan URL di `backend/app/database.py`).
-- Dependensi ML (TensorFlow/Keras lewat `deepface` / `tf-keras`) — instalasi pertama bisa memakan waktu.
-
----
-
-## Database MySQL
-
-1. Buat database, misalnya: `face_attend`.
-2. Sesuaikan string koneksi di `backend/app/database.py`:
-
-   ```text
-   mysql+mysqlconnector://USER:PASSWORD@HOST:PORT/DATABASE
-   ```
-
-3. Saat pertama kali backend dijalankan, **SQLAlchemy** membuat tabel dari model (`create_all`). Untuk database yang sudah ada, ada **migrasi ringan** di `main.py` yang menambah kolom `attendances.session_id` jika belum ada.
-
----
-
-## Model wajah (embeddings)
-
-1. Siapkan folder dataset: `ml_model/dataset/<NAMA_ORANG>/` berisi foto `.jpg`/`.jpeg`/`.png`.
-2. Dari folder `ml_model`, jalankan:
-
-   ```bash
-   python train.py
-   ```
-
-   Output: `ml_model/embeddings.json` (nama key harus **cukup cocok** dengan nama mahasiswa di DB agar pencarian `ilike` berhasil).
-
-3. Path file embedding: set `EMBEDDINGS_FILE` di `backend/.env` (opsional). Default relatif ke `ml_model/embeddings.json`. **Nama folder/key di JSON harus cocok dengan nama mahasiswa di DB** (normalisasi: huruf kecil, tanpa spasi/underscore diabaikan saat mencocokkan).
-
----
-
-## Menjalankan backend
+### 2. Setup Backend
 
 ```bash
 cd backend
+
+# Buat virtual environment
 python -m venv venv
-# Windows: venv\Scripts\activate
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Mac/Linux
+
+# Install dependencies
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+
+# Setup environment
+cp .env.example .env
+# Edit .env → isi DATABASE_URL dari Supabase
 ```
 
-API default: `http://127.0.0.1:8000`  
-Dokumentasi interaktif: `http://127.0.0.1:8000/docs`
+**Isi `backend/.env`:**
+```env
+DATABASE_URL=postgresql+psycopg2://postgres.xxxx:PASSWORD@aws-0-xx.pooler.supabase.com:6543/postgres
+SECRET_KEY=your-secret-key-here
+ALGORITHM=HS256
+```
 
-> Catatan: periksa `requirements.txt`; baris dependensi seharusnya termasuk `python-dotenv` (tanpa kesalahan ketik). Jika baris rusak, perbaiki manual sebelum `pip install`.
+```bash
+# Jalankan backend (tabel otomatis terbuat)
+uvicorn app.main:app --reload --port 8000
 
----
+# Buat akun admin pertama
+python scripts/ensure_admin.py
+# Email: admin@faceattend.com | Password: admin123
+```
 
-## Menjalankan frontend
+### 3. Setup Frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev
+# Buka http://localhost:5173
 ```
 
-Development server biasanya: `http://localhost:5173`
+### 4. Setup Face Recognition
 
-Di `frontend/src/utils/api.js`, `baseURL` diarahkan ke `http://localhost:8000` — samakan dengan port backend.
+```bash
+cd ml_model
 
----
+# Tambah foto ke dataset/
+# dataset/NamaMahasiswa/foto1.jpg, foto2.jpg, ...
 
-## Peran pengguna & alur kerja
+# Generate embeddings
+python train.py
 
-| Peran | Login | Kegiatan utama |
-|-------|--------|----------------|
-| **admin** | Ya | Kelola mahasiswa, dosen, mata kuliah, jadwal, user/role, lihat semua absensi, hapus absensi, bisa buka menu sesi kelas (override). |
-| **dosen** | Ya | Lihat jadwal miliknya (`GET /api/schedules/my`), **buka/tutup sesi absensi**, aktifkan kamera, lihat log & riwayat sesi. |
-| **mahasiswa** | Ya | Lihat dashboard & **riwayat absensi** sendiri; **tidak** perlu membuka kamera untuk absen massal (itu di sisi dosen). |
-
-### Penting: relasi dosen ↔ mata kuliah ↔ jadwal
-
-- **Mata kuliah** punya field **dosen pengampu** (`lecturer_id`).
-- **Jadwal** menaut ke **mata kuliah** (`course_id`).
-- Jadwal yang muncul untuk dosen di aplikasi = jadwal yang **course**-nya mengarah ke `lecturers.id` akun dosen tersebut.
-
-Jika akun dibuat sebagai dosen lewat **ubah role** di admin, backend akan mencoba membuat baris `lecturers` otomatis saat login/ubah role agar query jadwal tidak kosong.
+# Evaluasi akurasi (opsional)
+python test.py
+```
 
 ---
 
-## Ringkasan API
+## 🤖 Face Recognition Setup
 
-Base path: `/api/...`  
-Header otentikasi (kecuali login/register): `Authorization: Bearer <access_token>`
+### Struktur Dataset
+```
+ml_model/dataset/
+├── Ghani/
+│   ├── foto1.jpg
+│   ├── foto2.jpg
+│   └── ... (minimal 20 foto)
+└── Radit/
+    └── ... (minimal 20 foto)
+```
 
-| Area | Metode | Path | Catatan |
-|------|--------|------|---------|
-| Auth | POST | `/api/auth/login` | Body: email, password → JWT + role. |
-| Auth | POST | `/api/auth/register` | Untuk dev; dosen/mahasiswa “lengkap” lebih baik lewat menu admin. |
-| Users | — | `/api/users/students`, `/lecturers`, `/all`, `/role/{id}` | Sebagian besar butuh **admin**. |
-| Profil | GET | `/api/users/me` | User login: data diri + `avatar_url`. |
-| Profil | PUT | `/api/users/me` | `name`, opsional `new_password` + `current_password`. |
-| Profil | POST | `/api/users/me/avatar` | `multipart/form-data` field `file` (JPG/PNG/WebP). |
-| Admin | PUT | `/api/users/{id}/password` | Reset kata sandi user (`new_password`). |
-| Mahasiswa | GET | `/api/attendance/live/open-for-me` | Sesi `open` untuk MK yang diikuti (polling). |
-| Courses | GET/POST/DELETE | `/api/courses` | Admin. |
-| Schedules | GET/POST/DELETE | `/api/schedules` | Admin (list semua jadwal). |
-| Schedules | GET | `/api/schedules/my` | **Dosen & admin** — jadwal yang relevan. |
-| Attendance | GET | `/api/attendance/all` | Admin. |
-| Attendance | GET | `/api/attendance/dosen` | Dosen (terfilter course); admin melihat semua. |
-| Attendance | GET | `/api/attendance/my` | Mahasiswa. |
-| Attendance | GET | `/api/attendance/stats` | Admin. |
-| Attendance | DELETE | `/api/attendance/{id}` | Admin. |
-| Sesi | GET | `/api/attendance/sessions` | Dosen/admin. |
-| Sesi | POST | `/api/attendance/sessions/open` | Body: `{ "schedule_id": <id> }`. |
-| Sesi | POST | `/api/attendance/sessions/{id}/close` | Tutup = kunci absensi untuk sesi itu. |
-| Health | GET | `/` | Cek API hidup. |
+### Tips Foto yang Baik
+- ✅ Berbagai sudut (depan, sedikit kiri/kanan)
+- ✅ Berbagai pencahayaan (terang, redup)
+- ✅ Ekspresi berbeda
+- ✅ Minimal 20–30 foto per orang
+- ❌ Hindari foto buram atau terlalu gelap
 
-Detail lengkap: buka `/docs` saat backend jalan.
+### Konfigurasi Threshold (`backend/.env`)
+```env
+FACE_MATCH_THRESHOLD=0.68   # Naikkan jika banyak false positive
+FACE_MATCH_MARGIN=0.05      # Naikkan jika dua orang sering tertukar
+```
+
+> ⚠️ **Penting:** Nama folder di `dataset/` harus cocok dengan nama mahasiswa di database.
 
 ---
 
-## Sesi absensi & WebSocket
+## 📡 API Reference
 
-Alur yang diharapkan:
+Base URL: `http://localhost:8000`  
+Auth: `Authorization: Bearer <token>`
 
-1. Dosen (atau admin) login → **Sesi Absensi Kelas** (`/dosen/attendance`).
-2. Pilih **jadwal** → **Buka sesi** → backend membuat/ memakai `AttendanceSession` berstatus `open`.
-3. **Aktifkan kamera** → frontend membuka WebSocket:
+| Method | Endpoint | Akses | Deskripsi |
+|---|---|---|---|
+| POST | `/api/auth/login` | Public | Login → JWT token |
+| GET | `/api/users/me` | Semua | Profil user login |
+| PUT | `/api/users/me` | Semua | Update nama/password |
+| GET | `/api/users/students` | Admin | List semua mahasiswa |
+| GET | `/api/users/lecturers` | Admin | List semua dosen |
+| GET | `/api/courses` | Admin | List mata kuliah |
+| POST | `/api/courses/{id}/enrollments` | Admin | Enroll mahasiswa ke MK |
+| GET | `/api/schedules` | Admin | List semua jadwal |
+| GET | `/api/schedules/my` | Dosen | Jadwal milik dosen |
+| GET | `/api/schedules/student/my` | Mahasiswa | Jadwal yang diikuti |
+| POST | `/api/attendance/sessions/open` | Dosen | Buka sesi absensi |
+| POST | `/api/attendance/sessions/{id}/close` | Dosen | Tutup sesi |
+| GET | `/api/attendance/my` | Mahasiswa | Riwayat absensi |
+| GET | `/api/attendance/live/open-for-me` | Mahasiswa | Cek sesi aktif |
+| WS | `/api/face/ws?token=&session_id=` | Dosen | WebSocket scanning |
 
-   ```text
-   ws://localhost:8000/api/face/ws?token=<JWT>&session_id=<id>
-   ```
-
-4. Frame dikirim sebagai JSON dengan field `image` (base64 data URL).
-5. Server decode gambar → DeepFace embedding → **hanya** membandingkan ke entri `embeddings.json` yang namanya cocok dengan **mahasiswa terdaftar (enrollment)** pada mata kuliah jadwal tersebut → ambang + **margin** skor terbaik vs kedua → cek duplikasi **per sesi** → insert `Attendance` jika lolos.
-6. **Tutup sesi** → status `closed`; koneksi scan untuk sesi tersebut ditolak.
-
-**Keamanan singkat**: token JWT tidak boleh dibocorkan; query `token` di WebSocket praktis tetapi kurang ideal untuk produksi (pertimbangkan cookie/httpOnly atau subprotocol di iterasi berikutnya).
-
----
-
-## Profil, password & notifikasi mahasiswa
-
-- **Halaman Profil** (`/profile`): semua role. Ubah nama, unggah foto profil (disimpan di `backend/static/avatars/`), ganti kata sandi dengan mengisi kata sandi saat ini.
-- **Reset password (admin)**: menu **Users & Role** → tombol **Reset** per baris user memanggil `PUT /api/users/{id}/password`.
-- **Mahasiswa**: dashboard mem-polling `GET /api/attendance/live/open-for-me` setiap ~25 detik; jika ada sesi terbuka untuk salah satu MK yang diikuti, muncul **banner** “Sesi absensi sedang dibuka”.
-
----
-
-## Akurasi wajah & enrollment
-
-- **Enrollment wajib**: mahasiswa harus di-*assign* ke mata kuliah (menu admin → mata kuliah → mahasiswa) agar namanya masuk kandidat pengenalan untuk sesi jadwal MK itu. Tanpa enrollment, absensi lewat kamera untuk orang tersebut tidak dicatat (dan UI dosen bisa menampilkan pesan penolakan).
-- **Variabel lingkungan** (opsional, di `backend/.env`):
-  - `FACE_MATCH_THRESHOLD` — default `0.72` (lebih tinggi = lebih ketat).
-  - `FACE_MATCH_MARGIN` — default `0.06` — selisih minimum antara skor #1 dan #2; mengurangi salah pilih saat dua wajah mirip.
-- **Dataset**: pastikan nama folder/key di `embeddings.json` jelas dan cocok dengan nama di database (hindari dua orang berbeda dengan key yang sama mirip).
+> 📖 Dokumentasi interaktif: `http://localhost:8000/docs`
 
 ---
 
-## Masalah umum
+## 📚 Dokumentasi
 
-| Gejala | Kemungkinan penyebab |
-|--------|---------------------|
-| Jadwal dosen kosong | Course tidak di-assign ke dosen tersebut; atau belum ada baris `lecturers` untuk user (login ulang setelah ubah role dosen). |
-| Wajah tidak dikenali | `embeddings.json` kosong/salah path; nama tidak cocok dengan DB; mahasiswa belum di-enrollment ke MK; naikkan `FACE_MATCH_THRESHOLD` / turunkan margin jika terlalu ketat. |
-| Ghani terbaca orang lain | Pastikan enrollment + key embedding per orang unik; sesuaikan `FACE_MATCH_MARGIN` dan threshold; regenerate embedding dengan foto lebih jelas. |
-| WebSocket error / ditolak | Sesi sudah ditutup; `token` atau `session_id` salah; user bukan dosen/admin. |
-| CORS error | Pastikan origin frontend (`5173`/`3000`) ada di `CORSMiddleware` di `main.py`. |
-| Kolom DB error | Jalankan ulang backend agar migrasi ringkas `session_id` jalan; atau cek manual tabel `attendance_sessions` sudah terbentuk. |
+| Dokumen | Deskripsi |
+|---|---|
+| [PRD](docs/PRD.md) | Product Requirements Document |
+| [ERD](docs/ERD_mermaid.md) | Entity Relationship Diagram (Mermaid) |
+| [Use Case](docs/UML_1_usecase.md) | Use Case Diagram (Mermaid) |
+| [Class Diagram](docs/UML_2_classdiagram.md) | Class Diagram (Mermaid) |
+| [Sequence Diagram](docs/UML_3_sequence.md) | Sequence Diagram — Sesi Absensi |
+| [Activity Diagram](docs/UML_4_activity.md) | Activity Diagram — Face Recognition |
+| [ML README](ml_model/README_ML.md) | Panduan model, training, testing |
+
+> 🔗 Paste isi file `.md` ke [mermaid.live](https://mermaid.live) untuk render diagram.
 
 ---
 
-## Kontribusi & versi dokumentasi
+## 🔧 Troubleshooting
 
-Dokumen ini menggambarkan perilaku kode di repo **FaceAttend** pada saat penulisan. Jika ada perubahan endpoint atau flow, **update bagian terkait di file ini** agar tim tetap selaras.
+| Gejala | Solusi |
+|---|---|
+| Tidak bisa login | Jalankan `python scripts/ensure_admin.py` untuk buat akun admin |
+| Jadwal dosen kosong | Pastikan course sudah di-assign ke dosen tersebut |
+| Wajah tidak dikenali | Cek nama folder dataset cocok dengan nama di DB; tambah lebih banyak foto |
+| WebSocket error | Pastikan sesi masih `open` dan token valid |
+| CORS error | Tambahkan origin frontend di `CORSMiddleware` di `main.py` |
+| `bcrypt` error | Jalankan `pip install bcrypt==4.0.1` |
+
+---
+
+## 👥 Tim
+
+| Nama | Role |
+|---|---|
+| Ghani | Full Stack + ML |
+
+---
+
+## 📄 Lisensi
+
+MIT License — bebas digunakan untuk keperluan akademik.

@@ -33,7 +33,8 @@ export default function AdminUsers() {
     }
   };
 
-  const handleRoleChange = async (userId, newRole) => {
+  const handleRoleChange = async (userId, currentRole, newRole) => {
+    if (newRole === currentRole) return; // no change
     if (!confirm(`Konfirmasi permanen ubah otorisasi user ini menjadi ${newRole.toUpperCase()}?`)) return;
     try {
       await api.put(`/api/users/role/${userId}`, { role: newRole });
@@ -109,7 +110,7 @@ export default function AdminUsers() {
                           <td className="text-right">
                             <select
                               value={u.role}
-                              onChange={e => handleRoleChange(u.id, e.target.value)}
+                              onChange={e => handleRoleChange(u.id, u.role, e.target.value)}
                               className="select-field border-[var(--border)] bg-[var(--bg)] w-auto min-w-[140px] text-xs font-bold float-right py-2 cursor-pointer focus:border-[var(--purple)] focus:ring-[var(--purple)]"
                             >
                                 <option value="admin">➔ Administrator</option>

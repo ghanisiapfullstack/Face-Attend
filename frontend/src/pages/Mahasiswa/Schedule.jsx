@@ -26,17 +26,31 @@ export default function MahasiswaSchedule() {
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
   const onDateClick = (day) => setSelectedDate(day);
 
-  const getSchedulesForDay = (day) => {
-    return schedules.filter(s => {
-      const sDateStr = format(new Date(s.upcoming_regular_date), 'yyyy-MM-dd');
-      const dayStr = format(day, 'yyyy-MM-dd');
-      
-      let hasOverride = false;
-      if (s.overrides?.length) {
-        hasOverride = s.overrides.some(o => format(new Date(o.replacement_date), 'yyyy-MM-dd') === dayStr);
-      }
+  const DAY_TO_WEEKDAY = { Senin: 1, Selasa: 2, Rabu: 3, Kamis: 4, Jumat: 5 };
 
-      return sDateStr === dayStr || hasOverride;
+  const getSchedulesForDay = (day) => {
+    const dayOfWeek = day.getDay(); // 0=Sun,1=Mon,...,6=Sat
+    return schedules.filter(s => {
+      const scheduleWeekday = DAY_TO_WEEKDAY[s.day];
+      if (scheduleWeekday === undefined) return false;
+
+      // Check if this calendar day matches the schedule's weekday
+      const weekdayMatch = dayOfWeek === scheduleWeekday;
+
+      // Check if there's an override replacement on this exact date
+      const dayStr = format(day, 'yyyy-MM-dd');
+      const hasOverrideOnThisDay = s.overrides?.some(
+        o => format(new Date(o.replacement_date), 'yyyy-MM-dd') === dayStr
+      );
+
+      // Check if this day is cancelled by an override (original_date matches)
+      const isCancelledDay = s.overrides?.some(
+        o => format(new Date(o.original_date), 'yyyy-MM-dd') === dayStr
+      );
+
+      if (hasOverrideOnThisDay) return true;
+      if (isCancelledDay) return false;
+      return weekdayMatch;
     });
   };
 

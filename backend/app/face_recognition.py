@@ -10,8 +10,8 @@ load_dotenv()
 
 _default_embeddings = Path(__file__).resolve().parents[2] / "ml_model" / "embeddings.json"
 EMBEDDINGS_FILE = os.getenv("EMBEDDINGS_FILE", str(_default_embeddings))
-THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.72"))
-MATCH_MARGIN = float(os.getenv("FACE_MATCH_MARGIN", "0.06"))
+THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.68"))
+MATCH_MARGIN = float(os.getenv("FACE_MATCH_MARGIN", "0.08"))
 
 _embeddings_cache = None
 
@@ -90,7 +90,7 @@ def recognize_face(image):
     try:
         result = DeepFace.represent(
             img_path=image,
-            model_name="Facenet",
+            model_name="ArcFace",
             enforce_detection=False,
         )
         if not result:
@@ -126,8 +126,8 @@ def recognize_face(image):
 
 def recognize_face_against_candidates(image, candidates: list[tuple[str, int]]):
     """
-    Bandingkan wajah hanya dengan embedding milik kandidat (mis. mahasiswa terdaftar di MK).
-    Mengurangi salah orang (mis. Ghani terbaca Radith jika Radith tidak ikut MK).
+    Bandingkan wajah hanya dengan embedding milik kandidat (mahasiswa terdaftar di MK).
+    Mengurangi salah orang lintas kelas.
 
     Returns:
         (student_id | None, best_score)
@@ -139,7 +139,7 @@ def recognize_face_against_candidates(image, candidates: list[tuple[str, int]]):
     try:
         result = DeepFace.represent(
             img_path=image,
-            model_name="Facenet",
+            model_name="ArcFace",
             enforce_detection=False,
         )
         if not result:
@@ -160,8 +160,8 @@ def recognize_face_against_candidates(image, candidates: list[tuple[str, int]]):
         scores.sort(key=lambda x: x[0], reverse=True)
         best_sc, best_sid = scores[0]
         second_sc = scores[1][0] if len(scores) > 1 else 0.0
-        thr = float(os.getenv("FACE_MATCH_THRESHOLD", "0.72"))
-        margin = float(os.getenv("FACE_MATCH_MARGIN", "0.06"))
+        thr = float(os.getenv("FACE_MATCH_THRESHOLD", "0.68"))
+        margin = float(os.getenv("FACE_MATCH_MARGIN", "0.08"))
         if best_sc >= thr and (best_sc - second_sc) >= margin:
             return best_sid, float(best_sc)
         return None, float(best_sc)

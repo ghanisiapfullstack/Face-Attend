@@ -10,7 +10,7 @@ export default function AdminDosen() {
   const [dosen, setDosen] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', nip: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -25,7 +25,7 @@ export default function AdminDosen() {
     try {
       await api.post('/api/users/lecturers', form);
       setSuccess('Dosen berhasil ditambahkan!');
-      setShowModal(false); setForm({ name: '', email: '', password: '' }); fetch();
+      setShowModal(false); setForm({ name: '', nip: '', email: '', password: '' }); fetch();
       setTimeout(() => setSuccess(''), 3000);
     } catch (e) { setError(e.response?.data?.detail || 'Gagal menambahkan dosen'); }
   };
@@ -71,12 +71,13 @@ export default function AdminDosen() {
             : (
               <div className="table-wrap border-none rounded-none w-full custom-scrollbar">
                 <table className="data-table">
-                  <thead><tr><th className="w-12 text-center">#</th><th>Nama Lengkap & Gelar</th><th>Alamat Email</th><th className="text-right">Aksi</th></tr></thead>
+                  <thead><tr><th className="w-12 text-center">#</th><th>Nama Lengkap & Gelar</th><th>NIP</th><th>Alamat Email</th><th className="text-right">Aksi</th></tr></thead>
                   <tbody>
                     {dosen.map((d, i) => (
                       <tr key={d.id} className="hover:bg-[var(--surface2)] group transition-colors">
                         <td className="text-center font-medium text-[var(--text-3)]">{i + 1}</td>
                         <td className="font-bold text-[var(--text-1)]">{d.name}</td>
+                        <td className="text-xs font-mono text-[var(--text-2)]">{d.nip}</td>
                         <td className="text-xs text-[var(--text-2)] font-medium">{d.email}</td>
                         <td className="text-right">
                           <button className="btn btn-ghost text-red-500 hover:bg-red-500/10 hover:border-red-500/20 px-3 py-1.5 border-[var(--border)]" onClick={() => handleDelete(d.id)}>
@@ -100,7 +101,7 @@ export default function AdminDosen() {
                   <h2 className="text-xl font-bold text-[var(--text-1)] mb-6">Tambah Dosen Baru</h2>
                   {error && <div className="p-3 mb-4 rounded-lg bg-[var(--amber-bg)] text-[var(--amber)] border border-[rgba(245,158,11,0.3)] flex items-start gap-2 text-sm"><AlertCircle size={16} className="mt-0.5" /> {error}</div>}
                   <form onSubmit={handleSubmit} className="space-y-4">
-                    {[['name','Nama Lengkap & Gelar','text', 'Dr. Andi Hermawan, S.Kom., M.TI.'],['email','Alamat Email Kerja','email', 'andi.hermawan@binus.ac.id'],['password','Password Default','password', '••••••••']].map(([k,l,t,p]) => (
+                    {[['name','Nama Lengkap & Gelar','text', 'Dr. Andi Hermawan, S.Kom., M.TI.'],['nip','NIP (Nomor Induk Pegawai)','text', '198501012010011001'],['email','Alamat Email Kerja','email', 'andi.hermawan@binus.ac.id'],['password','Password Default','password', '••••••••']].map(([k,l,t,p]) => (
                       <div key={k}>
                         <label className="input-label">{l}</label>
                         <input type={t} className="input bg-[var(--bg)]" value={form[k]} onChange={e => setForm({...form,[k]:e.target.value})} placeholder={p} required />

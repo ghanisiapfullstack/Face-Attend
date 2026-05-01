@@ -48,7 +48,8 @@ def is_already_recorded(db: Session, student_id: int, schedule_id, session_id):
 @router.websocket("/ws")
 async def websocket_face(websocket: WebSocket):
     await websocket.accept()
-    db = next(get_db())
+    db_gen = get_db()
+    db = next(db_gen)
 
     try:
         token = websocket.query_params.get("token")
@@ -234,4 +235,8 @@ async def websocket_face(websocket: WebSocket):
         except Exception:
             pass
     finally:
+        try:
+            next(db_gen)
+        except StopIteration:
+            pass
         db.close()

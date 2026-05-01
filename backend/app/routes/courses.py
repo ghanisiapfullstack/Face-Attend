@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Course, Lecturer, Enrollment, Student
+from ..models import Attendance, AttendanceSession, Course, Enrollment, Lecturer, Schedule, Student
 from ..auth import require_admin, require_dosen
 
 router = APIRouter()
@@ -32,6 +32,15 @@ def delete_course(course_id: int, db: Session = Depends(get_db), current_user=De
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Mata kuliah tidak ditemukan")
+
+    # Cascade: delete attendance records, sessions, enrollments, schedules
+    schedule_ids = [s.id for s in db.query(Schedule).filter(Schedule.course_id == course_id).all()]
+    if schedule_ids:
+        db.query(Attendance).filter(Attendance.schedule_id.in_(schedule_ids)).delete(synchronize_session=False)
+        db.query(AttendanceSession).filter(AttendanceSession.schedule_id.in_(schedule_ids)).delete(synchronize_session=False)
+        db.query(Schedule).filter(Schedule.course_id == course_id).delete(synchronize_session=False)
+
+    db.query(Enrollment).filter(Enrollment.course_id == course_id).delete(synchronize_session=False)
     db.delete(course)
     db.commit()
     return {"message": "Mata kuliah berhasil dihapus"}

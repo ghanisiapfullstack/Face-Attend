@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, hash_password, require_admin, verify_password
 from ..database import get_db
-from ..models import Lecturer, Student, User
+from ..models import Attendance, AttendanceSession, Course, Enrollment, Lecturer, Schedule, ScheduleOverride, Student, User
 
 router = APIRouter()
 
@@ -105,7 +105,7 @@ def admin_reset_password(
     db.commit()
     return {"message": "Kata sandi user telah diatur ulang"}
 
-# ── STUDENTS ──────────────────────────────────────────────
+# ── STUDENTS 
 
 @router.get("/students")
 def get_students(db: Session = Depends(get_db), current_user=Depends(require_admin)):
@@ -161,16 +161,35 @@ def delete_student(student_id: int, db: Session = Depends(get_db), current_user=
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="Mahasiswa tidak ditemukan")
+
+    # Delete related records first to avoid FK constraint errors
+    db.query(Attendance).filter(Attendance.student_id == student_id).delete()
+    db.query(Enrollment).filter(Enrollment.student_id == student_id).delete()
+
+    user_id = student.user_id
     db.delete(student)
+    db.flush()
+
+    # Delete the linked user account
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            db.delete(user)
+
     db.commit()
     return {"message": "Mahasiswa berhasil dihapus"}
 
-# ── LECTURERS ─────────────────────────────────────────────
+# ── LECTURERS 
 
 @router.get("/lecturers")
 def get_lecturers(db: Session = Depends(get_db), current_user=Depends(require_admin)):
     lecturers = db.query(Lecturer).all()
-    return [{"id": l.id, "nip": l.nip, "name": l.name} for l in lecturers]
+    return [{
+        "id": l.id,
+        "nip": l.nip,
+        "name": l.name,
+        "email": l.user.email if l.user else None,
+    } for l in lecturers]
 
 @router.post("/lecturers")
 def create_lecturer(data: dict, db: Session = Depends(get_db), current_user=Depends(require_admin)):
@@ -203,11 +222,24 @@ def delete_lecturer(lecturer_id: int, db: Session = Depends(get_db), current_use
     lecturer = db.query(Lecturer).filter(Lecturer.id == lecturer_id).first()
     if not lecturer:
         raise HTTPException(status_code=404, detail="Dosen tidak ditemukan")
+
+    # Unlink courses so they don't cascade-delete
+    db.query(Course).filter(Course.lecturer_id == lecturer_id).update({"lecturer_id": None})
+
+    user_id = lecturer.user_id
     db.delete(lecturer)
+    db.flush()
+
+    # Delete the linked user account
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            db.delete(user)
+
     db.commit()
     return {"message": "Dosen berhasil dihapus"}
 
-# ── ALL USERS ─────────────────────────────────────────────
+# ── ALL USERS 
 
 @router.get("/all")
 def get_all_users(db: Session = Depends(get_db), current_user=Depends(require_admin)):

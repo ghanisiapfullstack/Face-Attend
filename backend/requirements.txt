@@ -5,10 +5,10 @@ opencv-python
 deepface
 tf-keras
 numpy
-mysql-connector-python
+psycopg2-binary
 python-jose
 passlib
-bcrypt
+bcrypt==4.0.1
 python-multipart
 sqlalchemy
 python-dotenv

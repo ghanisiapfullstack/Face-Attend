@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Schedule, Course, Lecturer, Student, Enrollment, ScheduleOverride
+from ..models import Attendance, AttendanceSession, Schedule, Course, Lecturer, Student, Enrollment, ScheduleOverride
 from ..auth import require_admin, require_dosen, get_current_user
 import datetime
 
@@ -90,6 +90,11 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db), current_use
     schedule = db.query(Schedule).filter(Schedule.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Jadwal tidak ditemukan")
+
+    # Cascade: delete attendance records, sessions, overrides before deleting schedule
+    db.query(Attendance).filter(Attendance.schedule_id == schedule_id).delete(synchronize_session=False)
+    db.query(AttendanceSession).filter(AttendanceSession.schedule_id == schedule_id).delete(synchronize_session=False)
+    db.query(ScheduleOverride).filter(ScheduleOverride.schedule_id == schedule_id).delete(synchronize_session=False)
     db.delete(schedule)
     db.commit()
     return {"message": "Jadwal berhasil dihapus"}

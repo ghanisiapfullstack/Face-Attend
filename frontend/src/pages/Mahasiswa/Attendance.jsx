@@ -21,7 +21,17 @@ export default function MahasiswaAttendance() {
 
   const courses = [...new Set(attendances.map(a => a.course_name).filter(Boolean))];
   const filtered = attendances.filter(a => {
-    const matchDate = filterDate ? new Date(a.check_in_time).toLocaleDateString('id-ID') === new Date(filterDate).toLocaleDateString('id-ID') : true;
+    const matchDate = filterDate
+      ? (() => {
+          const checkIn = new Date(a.check_in_time);
+          const filter = new Date(filterDate);
+          return (
+            checkIn.getFullYear() === filter.getFullYear() &&
+            checkIn.getMonth() === filter.getMonth() &&
+            checkIn.getDate() === filter.getDate()
+          );
+        })()
+      : true;
     return matchDate && (filterCourse ? a.course_name === filterCourse : true);
   });
   const totalHadir = filtered.filter(a => a.status === 'hadir').length;

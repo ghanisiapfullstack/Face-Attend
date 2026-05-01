@@ -21,6 +21,7 @@ const dosenMenus = [
   { label: 'Profil',       path: '/profile',           icon: UserCircle },
   { label: 'Dashboard',   path: '/dosen/dashboard',   icon: LayoutDashboard },
   { label: 'Absensi',     path: '/dosen/attendance',  icon: ClipboardCheck },
+  
 ];
 const mahasiswaMenus = [
   { label: 'Profil',         path: '/profile',             icon: UserCircle },

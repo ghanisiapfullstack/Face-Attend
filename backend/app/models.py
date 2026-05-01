@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Time, Date
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Time, Date, CheckConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 import datetime
+
 
 class User(Base):
     __tablename__ = "users"
@@ -9,8 +10,13 @@ class User(Base):
     name = Column(String(255))
     email = Column(String(255), unique=True)
     password = Column(String(255))
-    role = Column(Enum('admin', 'dosen', 'mahasiswa'), default='mahasiswa')
+    # Using String + CheckConstraint instead of Enum for PostgreSQL compatibility
+    role = Column(String(20), default='mahasiswa')
     avatar_path = Column(String(512), nullable=True)
+    __table_args__ = (
+        CheckConstraint("role IN ('admin', 'dosen', 'mahasiswa')", name="ck_users_role"),
+    )
+
 
 class Student(Base):
     __tablename__ = "students"
@@ -24,6 +30,7 @@ class Student(Base):
     attendances = relationship("Attendance", back_populates="student")
     enrollments = relationship("Enrollment", back_populates="student")
 
+
 class Lecturer(Base):
     __tablename__ = "lecturers"
     id = Column(Integer, primary_key=True, index=True)
@@ -32,6 +39,7 @@ class Lecturer(Base):
     name = Column(String(255))
     user = relationship("User")
     courses = relationship("Course", back_populates="lecturer")
+
 
 class Course(Base):
     __tablename__ = "courses"
@@ -44,11 +52,12 @@ class Course(Base):
     schedules = relationship("Schedule", back_populates="course")
     enrollments = relationship("Enrollment", back_populates="course")
 
+
 class Schedule(Base):
     __tablename__ = "schedules"
     id = Column(Integer, primary_key=True, index=True)
     course_id = Column(Integer, ForeignKey("courses.id"))
-    day = Column(Enum('Senin','Selasa','Rabu','Kamis','Jumat'))
+    day = Column(String(10))
     start_time = Column(Time)
     end_time = Column(Time)
     room = Column(String(50))
@@ -56,6 +65,10 @@ class Schedule(Base):
     attendances = relationship("Attendance", back_populates="schedule")
     sessions = relationship("AttendanceSession", back_populates="schedule")
     overrides = relationship("ScheduleOverride", back_populates="schedule")
+    __table_args__ = (
+        CheckConstraint("day IN ('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat')", name="ck_schedules_day"),
+    )
+
 
 class Enrollment(Base):
     __tablename__ = "enrollments"
@@ -65,6 +78,7 @@ class Enrollment(Base):
     enrolled_at = Column(DateTime, default=datetime.datetime.now)
     student = relationship("Student", back_populates="enrollments")
     course = relationship("Course", back_populates="enrollments")
+
 
 class ScheduleOverride(Base):
     __tablename__ = "schedule_overrides"
@@ -82,6 +96,7 @@ class ScheduleOverride(Base):
     schedule = relationship("Schedule", back_populates="overrides")
     created_by = relationship("User")
 
+
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
     id = Column(Integer, primary_key=True, index=True)
@@ -89,10 +104,14 @@ class AttendanceSession(Base):
     opened_by_user_id = Column(Integer, ForeignKey("users.id"))
     started_at = Column(DateTime, default=datetime.datetime.now)
     ended_at = Column(DateTime, nullable=True)
-    status = Column(Enum('open', 'closed', 'cancelled'), default='open')
+    status = Column(String(20), default='open')
     schedule = relationship("Schedule", back_populates="sessions")
     opened_by = relationship("User")
     attendances = relationship("Attendance", back_populates="session")
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'closed', 'cancelled')", name="ck_sessions_status"),
+    )
+
 
 class Attendance(Base):
     __tablename__ = "attendances"
@@ -101,7 +120,10 @@ class Attendance(Base):
     schedule_id = Column(Integer, ForeignKey("schedules.id"), nullable=True)
     session_id = Column(Integer, ForeignKey("attendance_sessions.id"), nullable=True)
     check_in_time = Column(DateTime, default=datetime.datetime.now)
-    status = Column(Enum('hadir', 'terlambat'), default='hadir')
+    status = Column(String(20), default='hadir')
     student = relationship("Student", back_populates="attendances")
     schedule = relationship("Schedule", back_populates="attendances")
     session = relationship("AttendanceSession", back_populates="attendances")
+    __table_args__ = (
+        CheckConstraint("status IN ('hadir', 'terlambat')", name="ck_attendances_status"),
+    )
