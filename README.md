@@ -6,7 +6,7 @@
 ![Tech Stack](https://img.shields.io/badge/Frontend-React_19-61DAFB?logo=react)
 ![Tech Stack](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)
 ![Tech Stack](https://img.shields.io/badge/Database-Supabase-3ECF8E?logo=supabase)
-![Tech Stack](https://img.shields.io/badge/AI-ArcFace_DeepFace-FF6F00?logo=tensorflow)
+![Tech Stack](https://img.shields.io/badge/AI-InsightFace_ArcFace-FF6F00?logo=opencv)
 
 ---
 
@@ -28,8 +28,8 @@
 
 | Fitur | Deskripsi |
 |---|---|
-| 🤖 **Face Recognition** | ArcFace (DeepFace) — pengenalan wajah real-time via webcam |
-| ⚡ **Real-time WebSocket** | Frame kamera dikirim setiap 450ms, hasil langsung tampil di Live Log |
+| 🤖 **Face Recognition** | InsightFace Buffalo_L (ArcFace) — pengenalan wajah via webcam + smile detection |
+| ⚡ **Smile Detection** | MediaPipe FaceMesh — senyum sebagai trigger capture, bukan WebSocket streaming |
 | 🔐 **Role-based Access** | Admin, Dosen, Mahasiswa — masing-masing dengan akses berbeda |
 | 📅 **Kalender Interaktif** | Mahasiswa lihat jadwal per bulan, termasuk kelas pengganti |
 | 🔔 **Notifikasi Sesi** | Banner otomatis muncul jika ada sesi absensi aktif untuk MK yang diikuti |
@@ -50,11 +50,11 @@
 ┌──────────────────────▼──────────────────────────────────┐
 │               FastAPI Backend (Uvicorn)                 │
 │   /api/auth  /api/users  /api/courses  /api/schedules   │
-│   /api/attendance  /api/face/ws (WebSocket)             │
+│   /api/attendance  /api/face/recognize (HTTP POST)      │
 └──────────┬──────────────────────────┬───────────────────┘
            │                          │
-    PostgreSQL                 DeepFace ArcFace
-    (Supabase)                 embeddings.json
+    PostgreSQL                 InsightFace Buffalo_L
+    (Supabase)                 (ArcFace, ONNX Runtime)
 ```
 
 ---

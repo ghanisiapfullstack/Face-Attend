@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, hash_password, require_admin, verify_password
 from ..database import get_db
+from ..face_recognition import extract_embedding_from_image, embedding_to_str
 from ..models import Attendance, AttendanceSession, Course, Enrollment, Lecturer, Schedule, ScheduleOverride, Student, User
 
 router = APIRouter()
@@ -116,6 +117,7 @@ def get_students(db: Session = Depends(get_db), current_user=Depends(require_adm
         "name": s.name,
         "email": s.user.email if s.user else None,
         "photo_path": s.photo_path,
+        "has_embedding": bool(s.face_embedding),
     } for s in students]
 
 @router.post("/students")
@@ -145,6 +147,60 @@ def create_student(data: dict, db: Session = Depends(get_db), current_user=Depen
     db.commit()
     db.refresh(student)
     return {"message": "Mahasiswa berhasil ditambahkan", "id": student.id}
+
+
+@router.post("/students/{student_id}/face")
+def upload_student_face(
+    student_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Upload foto wajah mahasiswa → extract embedding → simpan ke DB."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Mahasiswa tidak ditemukan")
+
+    if file.content_type not in _ALLOWED_IMG:
+        raise HTTPException(status_code=400, detail="Gunakan JPG, PNG, atau WebP")
+
+    # Baca bytes foto
+    image_bytes = file.file.read()
+
+    # Extract embedding via InsightFace
+    embedding = extract_embedding_from_image(image_bytes)
+    if embedding is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Wajah tidak terdeteksi di foto ini. Gunakan foto yang jelas dengan wajah menghadap kamera."
+        )
+
+    # Simpan foto ke disk
+    ext = _EXT.get(file.content_type, ".jpg")
+    fname = f"student_{student_id}_{uuid.uuid4().hex}{ext}"
+    dest = _AVATAR_DIR / fname
+    with dest.open("wb") as buf:
+        buf.write(image_bytes)
+
+    # Hapus foto lama jika ada
+    if student.photo_path:
+        old = _AVATAR_DIR / Path(student.photo_path).name
+        if old.is_file():
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+    # Simpan path foto + embedding ke DB
+    student.photo_path = f"/static/avatars/{fname}"
+    student.face_embedding = embedding_to_str(embedding)
+    db.commit()
+
+    return {
+        "message": "Foto wajah berhasil diupload dan embedding tersimpan",
+        "photo_url": student.photo_path,
+        "has_embedding": True,
+    }
 
 @router.put("/students/{student_id}")
 def update_student(student_id: int, data: dict, db: Session = Depends(get_db), current_user=Depends(require_admin)):

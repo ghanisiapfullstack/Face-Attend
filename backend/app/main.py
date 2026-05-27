@@ -73,10 +73,40 @@ def run_light_migration():
         if not avatar_col:
             conn.execute(text("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(512) NULL"))
 
+        # Add face_embedding column to students if missing
+        face_emb_col = conn.execute(text("""
+            SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_name = 'students'
+              AND column_name = 'face_embedding'
+        """)).scalar()
+        if not face_emb_col:
+            conn.execute(text("ALTER TABLE students ADD COLUMN face_embedding TEXT NULL"))
+        else:
+            # Ensure column is TEXT (not VARCHAR) to fit 512-dim embeddings
+            col_type = conn.execute(text("""
+                SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'students'
+                  AND column_name = 'face_embedding'
+            """)).scalar()
+            if col_type and col_type != 'text':
+                conn.execute(text("ALTER TABLE students ALTER COLUMN face_embedding TYPE TEXT"))
+
+        # Add UNIQUE constraint on (student_id, session_id) in attendances to prevent duplicates
+        uq_exists = conn.execute(text("""
+            SELECT COUNT(*) FROM information_schema.table_constraints
+            WHERE table_name = 'attendances'
+              AND constraint_name = 'uq_attendance_student_session'
+        """)).scalar()
+        if not uq_exists:
+            conn.execute(text("""
+                ALTER TABLE attendances
+                ADD CONSTRAINT uq_attendance_student_session UNIQUE (student_id, session_id)
+            """))
+
 if "sqlite" not in str(engine.url):
     run_light_migration()
 
-app = FastAPI(title="FaceAttend API", version="1.0.0")
+app = FastAPI(title="FaceAttend API", version="2.0.0")
 
 # CORS - allow React frontend
 app.add_middleware(

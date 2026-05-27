@@ -2,7 +2,7 @@
 
 ## Overview
 Proyek ini mengimplementasikan **face recognition** untuk sistem absensi menggunakan
-**Transfer Learning** dengan DeepFace (ArcFace model pretrained pada MS-Celeb-1M).
+**Transfer Learning** dengan InsightFace Buffalo_L (ArcFace model pretrained).
 
 Pendekatan: ekstrak embedding wajah dari model pretrained, lalu klasifikasi
 menggunakan **Cosine Similarity + Threshold**.
@@ -13,16 +13,17 @@ menggunakan **Cosine Similarity + Threshold**.
 ```
 ml_model/
 ├── dataset/              # Foto per orang (subfolder = nama orang)
-│   ├── ghani/
+│   ├── NamaMahasiswa1/
 │   │   ├── foto1.jpg
 │   │   └── ...
-│   └── Radit/
+│   └── NamaMahasiswa2/
 │       └── ...
 ├── train.py              # Feature extraction & simpan embeddings
-├── test.py               # Evaluasi model (accuracy, F1, confusion matrix)
+├── test.py               # Evaluasi model (Accuracy, F1, FAR, FRR, Confusion Matrix)
 ├── embeddings.json       # Output train.py — dipakai backend
 ├── test_split.json       # Output train.py — dibaca test.py
 ├── test_results.json     # Output test.py — hasil evaluasi lengkap
+├── FaceAttend_ML.ipynb   # Notebook siap pakai di Google Colab
 └── README_ML.md
 ```
 
@@ -46,41 +47,42 @@ python train.py
 ```bash
 python test.py
 ```
-- Output: Accuracy, Precision, Recall, F1, Confusion Matrix
+- Output: Accuracy, Precision, Recall, F1, FAR, FRR, Confusion Matrix
 - Disimpan ke `test_results.json`
 
 ---
 
 ## Konfigurasi Threshold
 
-Ubah nilai ini di bagian atas `test.py` (dan `face_recognition.py` untuk backend):
+Ubah nilai ini di bagian atas `test.py` (dan `backend/app/face_recognition.py` + `.env` untuk backend):
 
 | Parameter | Default | Keterangan |
 |---|---|---|
-| `THRESHOLD` | `0.68` | Minimum cosine similarity untuk dianggap match. Naikkan jika banyak false positive. |
+| `THRESHOLD` | `0.4` | Minimum cosine similarity untuk dianggap match. Naikkan jika banyak false positive. |
 | `MATCH_MARGIN` | `0.05` | Selisih minimum skor #1 vs #2. Naikkan jika dua orang sering tertukar. |
 
 ### Panduan tuning:
 
-**THRESHOLD**
-- `0.60` → Longgar, lebih banyak yang dikenali tapi rawan salah orang
-- `0.68` → Default, seimbang *(rekomendasi untuk dataset kecil)*
-- `0.75` → Ketat, lebih sedikit false positive tapi lebih banyak "unknown"
+**THRESHOLD** (InsightFace cosine similarity range: 0.0 – 1.0)
+- `0.3` → Longgar, lebih banyak yang dikenali tapi rawan salah orang
+- `0.4` → Default *(rekomendasi untuk InsightFace)*
+- `0.5` → Ketat, lebih sedikit false positive tapi lebih banyak "unknown"
+- `0.6` → Sangat ketat, hanya cocok jika dataset besar & variatif
 
 **MATCH_MARGIN**
 - `0.03` → Sangat longgar, cocok jika hanya ada 2-3 orang di kelas
-- `0.05` → Default *(rekomendasi untuk dataset kecil <30 foto/orang)*
+- `0.05` → Default *(rekomendasi)*
 - `0.08` → Ketat, cocok jika dataset besar dan foto variatif
 
 ### Contoh: dataset kecil (<15 foto/orang)
 ```python
-THRESHOLD    = 0.65
+THRESHOLD    = 0.35
 MATCH_MARGIN = 0.03
 ```
 
 ### Contoh: dataset besar (>30 foto/orang)
 ```python
-THRESHOLD    = 0.72
+THRESHOLD    = 0.5
 MATCH_MARGIN = 0.08
 ```
 
@@ -95,9 +97,9 @@ MATCH_MARGIN = 0.08
 | 20–30 foto | Baik | 80–95% |
 | > 30 foto (variatif) | Sangat baik | > 95% |
 
-> **Catatan:** Ghani (8 foto) score rendah (0.30) karena foto test kondisinya
-> berbeda dari training set — ini menunjukkan bahwa **kualitas dan kuantitas data
-> sangat mempengaruhi performa model**, bukan model-nya yang salah.
+> **Catatan:** Jika score rendah pada test, kemungkinan besar karena foto test
+> kondisinya berbeda dari training set — ini menunjukkan bahwa **kualitas dan
+> kuantitas data sangat mempengaruhi performa model**, bukan model-nya yang salah.
 
 ---
 
@@ -105,18 +107,47 @@ MATCH_MARGIN = 0.08
 
 | Komponen | Detail |
 |---|---|
-| **Model** | ArcFace (via DeepFace) |
-| **Pretrained on** | MS-Celeb-1M (~10 juta foto, 100k orang) |
+| **Library** | InsightFace |
+| **Model** | Buffalo_L (ArcFace) |
+| **Pretrained on** | MS1MV2 (~5.8 juta foto, 85k identitas) |
 | **Embedding dim** | 512 |
+| **Inference** | ONNX Runtime (CPU) |
 | **Metode klasifikasi** | Cosine Similarity + Threshold |
 | **Tipe learning** | Transfer Learning / Feature Extraction |
+
+### Keunggulan InsightFace vs DeepFace:
+- Lebih ringan (tidak butuh TensorFlow)
+- Inference lebih cepat via ONNX Runtime
+- Deteksi wajah built-in (RetinaFace)
+- Satu foto cukup untuk registrasi (one-shot)
 
 ---
 
 ## Untuk Jupyter Notebook / Google Colab
 
-Copy isi `train.py` dan `test.py` ke cell-cell notebook.
+Gunakan file `FaceAttend_ML.ipynb` yang sudah disediakan.
+
 Install dependencies:
 ```python
-!pip install deepface tf-keras numpy
+!pip install insightface onnxruntime opencv-python numpy matplotlib seaborn
 ```
+
+Upload folder `dataset/` ke Google Drive, lalu sesuaikan path di cell konfigurasi.
+
+---
+
+## Metrics yang Diukur
+
+| Metric | Keterangan |
+|---|---|
+| **Accuracy** | Persentase prediksi benar dari total test |
+| **Precision** | Dari yang diprediksi X, berapa yang benar X |
+| **Recall** | Dari yang sebenarnya X, berapa yang berhasil dikenali |
+| **F1-Score** | Harmonic mean dari Precision & Recall |
+| **FAR** (False Acceptance Rate) | Persentase orang salah yang diterima |
+| **FRR** (False Rejection Rate) | Persentase orang benar yang ditolak |
+
+### Interpretasi:
+- **FAR tinggi** → threshold terlalu rendah, naikkan `THRESHOLD`
+- **FRR tinggi** → threshold terlalu tinggi, turunkan `THRESHOLD`
+- **Keduanya tinggi** → dataset kurang variatif, tambah foto

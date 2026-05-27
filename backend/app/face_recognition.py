@@ -1,39 +1,100 @@
+"""
+Face Recognition Engine — InsightFace Buffalo_L
+================================================
+- Pretrained model, tidak perlu training ulang
+- 1 foto per mahasiswa cukup untuk registrasi
+- Embedding disimpan di DB (kolom face_embedding), bukan file JSON
+- Cosine similarity untuk matching
+"""
+
 import json
 import os
-from pathlib import Path
+import threading
 
+import cv2
 import numpy as np
 from dotenv import load_dotenv
-from deepface import DeepFace
 
 load_dotenv()
 
-_default_embeddings = Path(__file__).resolve().parents[2] / "ml_model" / "embeddings.json"
-EMBEDDINGS_FILE = os.getenv("EMBEDDINGS_FILE", str(_default_embeddings))
-THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.68"))
-MATCH_MARGIN = float(os.getenv("FACE_MATCH_MARGIN", "0.08"))
+THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.4"))
+MATCH_MARGIN = float(os.getenv("FACE_MATCH_MARGIN", "0.05"))
 
-_embeddings_cache = None
+# ── InsightFace app (lazy load, thread-safe) ──────────────
+_app = None
+_app_lock = threading.Lock()
 
 
-def load_embeddings():
-    global _embeddings_cache
-    if _embeddings_cache is not None:
-        return _embeddings_cache
+def get_insight_app():
+    """Lazy-load InsightFace dengan double-check locking agar thread-safe."""
+    global _app
+    if _app is None:
+        with _app_lock:
+            if _app is None:  # double-check setelah acquire lock
+                from insightface.app import FaceAnalysis
+                _app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+                _app.prepare(ctx_id=0, det_size=(640, 640))
+    return _app
+
+
+# ── Embedding extraction ──────────────────────────────────
+
+def extract_embedding_from_image(image_input) -> list[float] | None:
+    """
+    Ekstrak embedding wajah dari gambar.
+
+    Args:
+        image_input: numpy array (BGR) atau bytes atau path string
+
+    Returns:
+        list[float] embedding 512-dim, atau None jika tidak ada wajah
+    """
+    app = get_insight_app()
+
+    # Konversi input ke numpy BGR array
+    if isinstance(image_input, (bytes, bytearray)):
+        np_arr = np.frombuffer(image_input, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    elif isinstance(image_input, str):
+        img = cv2.imread(image_input)
+    elif isinstance(image_input, np.ndarray):
+        img = image_input
+    else:
+        return None
+
+    if img is None:
+        return None
+
     try:
-        with open(EMBEDDINGS_FILE, "r", encoding="utf-8") as f:
-            _embeddings_cache = json.load(f)
-            return _embeddings_cache
-    except OSError:
-        return {}
+        faces = app.get(img)
+        if not faces:
+            return None
+        # Ambil wajah dengan detection score tertinggi
+        best_face = max(faces, key=lambda f: f.det_score)
+        return best_face.embedding.tolist()
+    except Exception as e:
+        print(f"[InsightFace] extract_embedding error: {e}")
+        return None
 
 
-def clear_embeddings_cache():
-    global _embeddings_cache
-    _embeddings_cache = None
+def embedding_to_str(embedding: list[float]) -> str:
+    """Serialize embedding ke JSON string untuk disimpan di DB."""
+    return json.dumps(embedding)
 
 
-def cosine_similarity(a, b):
+def str_to_embedding(s: str) -> list[float] | None:
+    """Deserialize embedding dari JSON string DB."""
+    if not s:
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        return None
+
+
+# ── Cosine similarity ─────────────────────────────────────
+
+def cosine_similarity(a, b) -> float:
     a = np.array(a, dtype=np.float64)
     b = np.array(b, dtype=np.float64)
     denom = np.linalg.norm(a) * np.linalg.norm(b)
@@ -42,130 +103,48 @@ def cosine_similarity(a, b):
     return float(np.dot(a, b) / denom)
 
 
-def _norm_name(s: str) -> str:
-    return "".join(c for c in (s or "").lower() if c.isalnum())
+# ── Recognition against enrolled candidates ──────────────
 
-
-def embedding_key_matches_student(student_name: str, emb_key: str) -> bool:
-    """Cocokkan nama di DB dengan key folder di embeddings.json."""
-    a = _norm_name(student_name)
-    b = _norm_name(emb_key)
-    if not a or not b:
-        return False
-    if a == b:
-        return True
-    if len(b) >= 3 and b in a:
-        return True
-    if len(a) >= 3 and a in b:
-        return True
-    return False
-
-
-def build_embedding_candidates(students, embeddings: dict) -> list[tuple[str, int]]:
+def recognize_against_students(
+    image_input,
+    students: list,  # list of Student ORM objects with face_embedding
+) -> tuple[int | None, float]:
     """
-    Pasangan (key_embeddings, student_id) untuk mahasiswa terdaftar.
-    Hanya key yang cocok dengan nama mahasiswa yang dipakai saat inferensi.
-    """
-    if not embeddings or not students:
-        return []
-    keys = list(embeddings.keys())
-    out: list[tuple[str, int]] = []
-    seen: set[tuple[str, int]] = set()
-    for s in students:
-        for k in keys:
-            if embedding_key_matches_student(s.name, k):
-                t = (k, s.id)
-                if t not in seen:
-                    seen.add(t)
-                    out.append(t)
-    return out
+    Kenali wajah dari gambar, bandingkan hanya dengan mahasiswa terdaftar.
 
-
-def recognize_face(image):
-    """Inferensi lawan semua embedding (legacy)."""
-    embeddings = load_embeddings()
-    if not embeddings:
-        return None, 0.0
-
-    try:
-        result = DeepFace.represent(
-            img_path=image,
-            model_name="ArcFace",
-            enforce_detection=False,
-        )
-        if not result:
-            return None, 0.0
-
-        face_embedding = result[0]["embedding"]
-        best_match = None
-        best_score = -1.0
-        second_score = -1.0
-        for person_name, data in embeddings.items():
-            score = cosine_similarity(face_embedding, data["embedding"])
-            if score > best_score:
-                second_score = best_score
-                best_score = score
-                best_match = person_name
-            elif score > second_score:
-                second_score = score
-
-        if second_score < 0:
-            second_score = 0.0
-        if (
-            best_match
-            and best_score >= THRESHOLD
-            and (best_score - second_score) >= MATCH_MARGIN
-        ):
-            return best_match, float(best_score)
-        return None, float(best_score)
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return None, 0.0
-
-
-def recognize_face_against_candidates(image, candidates: list[tuple[str, int]]):
-    """
-    Bandingkan wajah hanya dengan embedding milik kandidat (mahasiswa terdaftar di MK).
-    Mengurangi salah orang lintas kelas.
+    Args:
+        image_input: numpy array BGR / bytes / path
+        students: list Student ORM objects (harus punya .id dan .face_embedding)
 
     Returns:
         (student_id | None, best_score)
     """
-    embeddings = load_embeddings()
-    if not embeddings or not candidates:
+    # Filter mahasiswa yang punya embedding
+    candidates = []
+    for s in students:
+        emb = str_to_embedding(s.face_embedding)
+        if emb:
+            candidates.append((s.id, emb))
+
+    if not candidates:
         return None, 0.0
 
-    try:
-        result = DeepFace.represent(
-            img_path=image,
-            model_name="ArcFace",
-            enforce_detection=False,
-        )
-        if not result:
-            return None, 0.0
-
-        face_embedding = result[0]["embedding"]
-        scores: list[tuple[float, int]] = []
-        for key, sid in candidates:
-            data = embeddings.get(key)
-            if not data or "embedding" not in data:
-                continue
-            sc = cosine_similarity(face_embedding, data["embedding"])
-            scores.append((sc, sid))
-
-        if not scores:
-            return None, 0.0
-
-        scores.sort(key=lambda x: x[0], reverse=True)
-        best_sc, best_sid = scores[0]
-        second_sc = scores[1][0] if len(scores) > 1 else 0.0
-        thr = float(os.getenv("FACE_MATCH_THRESHOLD", "0.68"))
-        margin = float(os.getenv("FACE_MATCH_MARGIN", "0.08"))
-        if best_sc >= thr and (best_sc - second_sc) >= margin:
-            return best_sid, float(best_sc)
-        return None, float(best_sc)
-
-    except Exception as e:
-        print(f"Error: {e}")
+    # Extract embedding dari foto yang masuk
+    face_emb = extract_embedding_from_image(image_input)
+    if face_emb is None:
         return None, 0.0
+
+    # Hitung similarity vs semua kandidat
+    scores = [(sid, cosine_similarity(face_emb, emb)) for sid, emb in candidates]
+    scores.sort(key=lambda x: x[1], reverse=True)
+
+    best_sid, best_sc = scores[0]
+    second_sc = scores[1][1] if len(scores) > 1 else 0.0
+
+    thr = float(os.getenv("FACE_MATCH_THRESHOLD", "0.4"))
+    margin = float(os.getenv("FACE_MATCH_MARGIN", "0.05"))
+
+    if best_sc >= thr and (best_sc - second_sc) >= margin:
+        return best_sid, float(best_sc)
+
+    return None, float(best_sc)

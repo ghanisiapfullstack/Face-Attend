@@ -2,8 +2,8 @@ fastapi
 uvicorn
 websockets
 opencv-python
-deepface
-tf-keras
+insightface
+onnxruntime
 numpy
 psycopg2-binary
 python-jose

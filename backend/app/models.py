@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Time, Date, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Time, Date, CheckConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 import datetime
@@ -25,7 +25,7 @@ class Student(Base):
     nim = Column(String(20), unique=True)
     name = Column(String(255))
     photo_path = Column(String(255), nullable=True)
-    face_embedding = Column(String(5000), nullable=True)
+    face_embedding = Column(Text, nullable=True)
     user = relationship("User")
     attendances = relationship("Attendance", back_populates="student")
     enrollments = relationship("Enrollment", back_populates="student")

@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Attendance, Student, Schedule, AttendanceSession, Lecturer, Course, Enrollment
@@ -201,7 +203,7 @@ def open_attendance_session(data: dict, db: Session = Depends(get_db), current_u
     existing_open = db.query(AttendanceSession).filter(
         AttendanceSession.schedule_id == schedule.id,
         AttendanceSession.status == "open"
-    ).first()
+    ).with_for_update().first()
     if existing_open:
         return {"message": "Sesi sudah aktif", "session_id": existing_open.id}
 
@@ -211,9 +213,20 @@ def open_attendance_session(data: dict, db: Session = Depends(get_db), current_u
         started_at=datetime.datetime.now(),
         status="open",
     )
-    db.add(session)
-    db.commit()
-    db.refresh(session)
+    try:
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+    except IntegrityError:
+        db.rollback()
+        # Race condition: another request opened it first
+        existing = db.query(AttendanceSession).filter(
+            AttendanceSession.schedule_id == schedule.id,
+            AttendanceSession.status == "open"
+        ).first()
+        if existing:
+            return {"message": "Sesi sudah aktif", "session_id": existing.id}
+        raise HTTPException(status_code=500, detail="Gagal membuka sesi")
     return {"message": "Sesi absensi dibuka", "session_id": session.id}
 
 @router.post("/sessions/{session_id}/close")
