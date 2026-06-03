@@ -108,10 +108,10 @@ if "sqlite" not in str(engine.url):
 
 app = FastAPI(title="FaceAttend API", version="2.0.0")
 
-# CORS - allow React frontend
+# CORS - allow React frontend (Vite default 5173, fallback 5174-5176, CRA 3000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):(517[3-9]|3000)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
