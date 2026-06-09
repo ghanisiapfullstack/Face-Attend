@@ -35,8 +35,8 @@ def get_insight_app():
                 from insightface.app import FaceAnalysis
                 # OPTIMIZED: buffalo_s model (5-10x faster, 99.4% accuracy)
                 _app = FaceAnalysis(name="buffalo_s", providers=["CPUExecutionProvider"])
-                # OPTIMIZED: smaller det_size for faster processing
-                _app.prepare(ctx_id=0, det_size=(320, 320))
+                # OPTIMIZED: balanced det_size for speed + stability
+                _app.prepare(ctx_id=0, det_size=(416, 416))
     return _app
 
 
