@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..auth import get_current_user, hash_password, require_admin, verify_password
 from ..database import get_db
@@ -110,7 +110,11 @@ def admin_reset_password(
 
 @router.get("/students")
 def get_students(db: Session = Depends(get_db), current_user=Depends(require_admin)):
-    students = db.query(Student).all()
+    # OPTIMIZED: Eager load user data to prevent N+1 queries
+    students = db.query(Student)\
+        .options(joinedload(Student.user))\
+        .all()
+    
     return [{
         "id": s.id,
         "nim": s.nim,

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..models import Attendance, AttendanceSession, Course, Enrollment, Lecturer, Schedule, Student
 from ..auth import require_admin, require_dosen
@@ -8,7 +8,14 @@ router = APIRouter()
 
 @router.get("")
 def get_courses(db: Session = Depends(get_db), current_user=Depends(require_admin)):
-    courses = db.query(Course).all()
+    # OPTIMIZED: Eager load lecturer and enrollments to prevent N+1 queries
+    courses = db.query(Course)\
+        .options(
+            joinedload(Course.lecturer),
+            joinedload(Course.enrollments)
+        )\
+        .all()
+    
     return [{"id": c.id, "code": c.code, "name": c.name,
              "lecturer_name": c.lecturer.name if c.lecturer else None,
              "credits": c.credits,
@@ -70,7 +77,14 @@ def get_course_students(course_id: int, db: Session = Depends(get_db), current_u
     if not course:
         raise HTTPException(status_code=404, detail="Mata kuliah tidak ditemukan")
 
-    enrollments = db.query(Enrollment).filter(Enrollment.course_id == course_id).all()
+    # OPTIMIZED: Eager load student and user to prevent N+1 queries
+    enrollments = db.query(Enrollment)\
+        .options(
+            joinedload(Enrollment.student).joinedload(Student.user)
+        )\
+        .filter(Enrollment.course_id == course_id)\
+        .all()
+    
     return [{
         "student_id": e.student.id,
         "nim": e.student.nim,
