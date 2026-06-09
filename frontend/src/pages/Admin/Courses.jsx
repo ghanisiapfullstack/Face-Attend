@@ -3,7 +3,7 @@ import Sidebar from '../../components/Sidebar';
 import api from '../../utils/api';
 import AnimatedSection from '../../components/AnimatedSection';
 import GlassCard from '../../components/GlassCard';
-import { Plus, Trash2, BookOpen, AlertCircle, CheckCircle2, Users2, UserMinus } from 'lucide-react';
+import { Plus, Trash2, BookOpen, AlertCircle, CheckCircle2, Users2, UserMinus, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AdminCourses() {
@@ -14,10 +14,13 @@ export default function AdminCourses() {
   const [enrolledStudents, setEnrolledStudents] = useState([]);
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+  const [loadingEnrollment, setLoadingEnrollment] = useState(false);
+  const [enrollmentError, setEnrollmentError] = useState('');
+  const [enrollmentSuccess, setEnrollmentSuccess] = useState('');
+
   const [showModal, setShowModal] = useState(false);
   const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
-  
+
   const [form, setForm] = useState({ code: '', name: '', lecturer_id: '', credits: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -49,12 +52,52 @@ export default function AdminCourses() {
     setSelectedCourse(course);
     setSelectedStudentIds([]);
     setShowEnrollmentModal(true);
+    setLoadingEnrollment(true);
+    setEnrollmentError('');
+    setEnrollmentSuccess('');
+
     try {
-      const res = await api.get(`/api/courses/${course.id}/students`);
-      setEnrolledStudents(res.data || []);
+      // 🔧 FIX: Refresh students list setiap buka modal untuk data terbaru
+      const studentsRes = await api.get('/api/users/students');
+      setStudents(studentsRes.data);
+
+      // Fetch enrolled students for this course
+      const enrolledRes = await api.get(`/api/courses/${course.id}/students`);
+      setEnrolledStudents(enrolledRes.data || []);
+      
+      // 🎉 Toast notification: Data refreshed
+      setEnrollmentSuccess(`✓ Data mahasiswa diperbarui (${studentsRes.data.length} mahasiswa terdaftar)`);
+      setTimeout(() => setEnrollmentSuccess(''), 3000);
     } catch (e) {
       console.error(e);
       setEnrolledStudents([]);
+      // 🔴 Error handling: Show error message
+      setEnrollmentError('Gagal memuat data mahasiswa. Silakan coba lagi.');
+    } finally {
+      setLoadingEnrollment(false);
+    }
+  };
+
+  // 🔄 Manual retry function
+  const retryFetchStudents = async () => {
+    if (!selectedCourse) return;
+    setLoadingEnrollment(true);
+    setEnrollmentError('');
+    
+    try {
+      const studentsRes = await api.get('/api/users/students');
+      setStudents(studentsRes.data);
+      
+      const enrolledRes = await api.get(`/api/courses/${selectedCourse.id}/students`);
+      setEnrolledStudents(enrolledRes.data || []);
+      
+      setEnrollmentSuccess(`✓ Data berhasil dimuat ulang (${studentsRes.data.length} mahasiswa)`);
+      setTimeout(() => setEnrollmentSuccess(''), 3000);
+    } catch (e) {
+      console.error(e);
+      setEnrollmentError('Masih gagal memuat data. Periksa koneksi internet Anda.');
+    } finally {
+      setLoadingEnrollment(false);
     }
   };
 
@@ -205,33 +248,91 @@ export default function AdminCourses() {
                       <p className="text-sm text-[var(--text-3)] font-mono">{selectedCourse.code} • Dosen: {selectedCourse.lecturer_name}</p>
                     </div>
                   </div>
-                  
+
+                  {/* Toast Notifications for Enrollment Modal */}
+                  <AnimatePresence>
+                    {enrollmentSuccess && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0 }} 
+                        className="p-3 mb-4 rounded-lg bg-[var(--green-bg)] text-[var(--green)] border border-[rgba(34,197,94,0.3)] flex items-center gap-2 text-sm font-medium"
+                      >
+                        <CheckCircle2 size={16} /> {enrollmentSuccess}
+                      </motion.div>
+                    )}
+                    {enrollmentError && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }} 
+                        animate={{ opacity: 1, y: 0 }} 
+                        exit={{ opacity: 0 }} 
+                        className="p-3 mb-4 rounded-lg bg-[var(--amber-bg)] text-[var(--amber)] border border-[rgba(245,158,11,0.3)] flex items-start gap-2 text-sm"
+                      >
+                        <AlertCircle size={16} className="mt-0.5" /> 
+                        <div className="flex-1">
+                          {enrollmentError}
+                          <button 
+                            onClick={retryFetchStudents} 
+                            className="ml-3 underline hover:text-[var(--amber)] font-bold"
+                            disabled={loadingEnrollment}
+                          >
+                            Coba Lagi
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {error && <div className="p-3 mb-4 rounded-lg bg-[var(--amber-bg)] text-[var(--amber)] border border-[rgba(245,158,11,0.3)] flex items-start gap-2 text-sm"><AlertCircle size={16} className="mt-0.5" /> {error}</div>}
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     {/* ENROLL FORM LAYER */}
                     <div className="lg:col-span-5 flex flex-col gap-4">
                       <div className="bg-[var(--surface2)] p-4 rounded-xl border border-[var(--border2)] flex flex-col h-full">
-                        <label className="input-label font-bold text-[var(--text-1)] mb-3">Tugaskan Mahasiswa</label>
-                        <select
-                          className="select-field input bg-[var(--bg)] border border-[var(--border)] custom-scrollbar text-sm font-medium h-[280px]"
-                          multiple
-                          value={selectedStudentIds.map(String)}
-                          onChange={(e) => setSelectedStudentIds(Array.from(e.target.selectedOptions).map((opt) => Number(opt.value)))}
-                        >
-                          {availableStudents.length === 0 ? (
-                            <option disabled className="p-2 text-[var(--text-3)] text-center">Semua mahasiswa telah masuk kelas ini</option>
-                          ) : (
-                            availableStudents.map((s) => (
-                              <option key={s.id} value={s.id} className="p-2 border-b border-[var(--border)] border-opacity-50 hover:bg-[var(--surface2)]">
-                                {s.nim} - {s.name}
-                              </option>
-                            ))
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="input-label font-bold text-[var(--text-1)]">Tugaskan Mahasiswa</label>
+                          {/* Manual Refresh Button */}
+                          {!loadingEnrollment && (
+                            <button 
+                              onClick={retryFetchStudents}
+                              className="btn btn-ghost btn-sm px-2 py-1 text-xs flex items-center gap-1 border border-[var(--border)]"
+                              title="Refresh data mahasiswa"
+                            >
+                              <RefreshCw size={12} /> Refresh
+                            </button>
                           )}
-                        </select>
-                        <div className="text-[10px] text-[var(--text-3)] font-medium uppercase tracking-wider py-2 italic text-center">Tahan CTRL / CMD untuk pilih lebih dari 1</div>
+                        </div>
                         
-                        <button className="btn btn-primary w-full mt-auto py-2.5 shadow-lg shadow-[var(--accent)]/20" type="button" onClick={handleAssignStudents} disabled={selectedStudentIds.length === 0}>
+                        {loadingEnrollment ? (
+                          <div className="flex items-center justify-center h-[280px] text-[var(--text-3)]">
+                            <div className="text-center">
+                              <div className="animate-spin text-3xl mb-2">⏳</div>
+                              <div className="text-sm font-medium">Memuat data mahasiswa...</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <select
+                              className="select-field input bg-[var(--bg)] border border-[var(--border)] custom-scrollbar text-sm font-medium h-[280px]"
+                              multiple
+                              value={selectedStudentIds.map(String)}
+                              onChange={(e) => setSelectedStudentIds(Array.from(e.target.selectedOptions).map((opt) => Number(opt.value)))}
+                            >
+                              {availableStudents.length === 0 ? (
+                                <option disabled className="p-2 text-[var(--text-3)] text-center">Semua mahasiswa telah masuk kelas ini</option>
+                              ) : (
+                                availableStudents.map((s) => (
+                                  <option key={s.id} value={s.id} className="p-2 border-b border-[var(--border)] border-opacity-50 hover:bg-[var(--surface2)]">
+                                    {s.nim} - {s.name}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                            <div className="text-[10px] text-[var(--text-3)] font-medium uppercase tracking-wider py-2 italic text-center">Tahan CTRL / CMD untuk pilih lebih dari 1</div>
+                          </>
+                        )}
+
+                        <button className="btn btn-primary w-full mt-auto py-2.5 shadow-lg shadow-[var(--accent)]/20" type="button" onClick={handleAssignStudents} disabled={selectedStudentIds.length === 0 || loadingEnrollment}>
                           + Tambah {selectedStudentIds.length > 0 ? selectedStudentIds.length : ''} ke Kelas
                         </button>
                       </div>
